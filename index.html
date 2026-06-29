@@ -147,7 +147,7 @@
                             date: fields.date || "",
                         });
                         return `<sup><a href="#ref-${refs.length}">[${refs.length}]</a></sup>`;
-                    }
+                    })
                     .replace(/^==== (.*?) ====/gm, (m,t)=>`<h4 id="${t.toLowerCase().replace(/\s+/g,"-")}" class="text-lg font-bold mt-4 mb-2 text-gray-800 dark:text-gray-200">${t}</h4>`)
                     .replace(/^=== (.*?) ===/gm, (m,t)=>`<h3 id="${t.toLowerCase().replace(/\s+/g,"-")}" class="text-xl font-bold mt-5 mb-2 text-gray-800 dark:text-gray-200">${t}</h3>`)
                     .replace(/^== (.*?) ==/gm, (m,t)=>(toc.push({id:t.toLowerCase().replace(/\s+/g,"-"),title:t,level:2}),`<h2 id="${t.toLowerCase().replace(/\s+/g,"-")}" class="text-2xl font-bold mt-8 mb-4 border-b border-gray-200 dark:border-gray-700 pb-2 text-gray-900 dark:text-white">${t}</h2>`))

@@ -4,7 +4,6 @@
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>LBmedia - The Free Encyclopedia</title>
-        <!-- Tailwind CSS -->
         <script src="https://cdn.tailwindcss.com"></script>
         <script>
             tailwind.config = {
@@ -48,9 +47,7 @@
                 }
             }
         </style>
-        <!-- Lucide Icons -->
         <script src="https://unpkg.com/lucide@latest"></script>
-        <!-- Application Logic -->
         <script type="module">
             import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
             import {
@@ -73,8 +70,8 @@
                 addDoc,
                 updateDoc,
                 deleteDoc,
+                runTransaction,
             } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-            // --- CONFIGURATION & SETUP ---
             const firebaseConfig = {
                 apiKey: "AIzaSyA_XrD0M2R-V0IvU_lrxlZ82wIp_K7QoCg",
                 authDomain: "error-inc.firebaseapp.com",
@@ -90,7 +87,6 @@
             const appId = typeof __app_id !== "undefined" ? __app_id : "lbmedia-app";
             const getPublicCol = (colName) => collection(db, "artifacts", appId, "public", "data", colName);
             const getPrivateCol = (uid, colName) => collection(db, "artifacts", appId, "users", uid, colName);
-            // --- STATE MANAGEMENT ---
             const state = {
                 user: null,
                 userData: null,
@@ -102,13 +98,13 @@
                 activeArticleId: null,
                 activeDraftId: null,
                 authModalOpen: false,
-                authMode: "login", // login, signup
+                authMode: "login",
                 searchQuery: "",
+                featuredArticleId: null,
                 editor: { title: "", content: "", isSaving: false, isPublishing: false, lastSaved: null },
             };
             let unsubscribers = [];
             let autoSaveTimer = null;
-            // --- UTILITIES ---
             const parseWiki = (text) => {
                 if (!text) return { html: "", toc: [] };
                 let sanitized = text.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "");
@@ -192,7 +188,6 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                     return { accepted: false, reasons: ["AI service error."] };
                 }
             };
-            // --- ACTIONS EXPOSED GLOBALLY ---
             window.app = {
                 toggleDarkMode: () => {
                     state.darkMode = !state.darkMode;
@@ -540,6 +535,28 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                     console.error(err);
                 }
             };
+            const updateFeaturedArticleIfNeeded = async () => {
+            const featuredRef = doc(getPublicCol("featured"), "daily");
+            const today = new Date().toISOString().split("T")[0];
+            try {
+                await runTransaction(db, async (transaction) => {
+                    const featuredSnap = await transaction.get(featuredRef);
+                    if (featuredSnap.exists() && featuredSnap.data().date === today) return;
+                    const articlesSnap = await getDocs(getPublicCol("articles"));
+                    const published = articlesSnap.docs.filter(
+                        d => d.data().status === "published"
+                    );
+                    if (!published.length) return;
+                    const random = published[Math.floor(Math.random() * published.length)];
+                    transaction.set(featuredRef, {
+                        articleId: random.id,
+                        date: today
+                    });
+                });
+            } catch (err) {
+                console.error("Failed to update featured article:", err);
+            }
+            };
             const setupListeners = (user) => {
                 // Clear old listeners
                 unsubscribers.forEach((u) => u());
@@ -554,6 +571,17 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                             if (state.currentView !== "editor") render(); // Don't disrupt typing
                         },
                         (err) => console.error("Articles error:", err)
+                    )
+                );
+                unsubscribers.push(
+                    onSnapshot(
+                        doc(getPublicCol("featured"), "daily"),
+                        (snap) => {
+                            if (snap.exists()) {
+                                state.featuredArticleId = snap.data().articleId;
+                                if (state.currentView === "home") render();
+                            }
+                        }
                     )
                 );
                 if (user && !user.isAnonymous) {
@@ -605,7 +633,8 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                         } else {
                             state.userData = null;
                         }
-                        setupListeners(u); // Safe to attach listeners now
+                        setupListeners(u);
+                        await updateFeaturedArticleIfNeeded();
                     } else {
                         state.user = null;
                         state.userData = null;
@@ -732,13 +761,23 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                         return renderHomeView();
                 }
             };
+            const getFeaturedArticle = (articles) => {
+                if (!articles.length) return null;
+                const today = new Date().toISOString().split("T")[0];
+                const sorted = [...articles].sort((a, b) => a.id.localeCompare(b.id));
+                let hash = 0;
+                for (const c of today) {
+                    hash = ((hash << 5) - hash) + c.charCodeAt(0);
+                    hash |= 0;
+                }
+                return sorted[Math.abs(hash) % sorted.length];
+            };
             const renderHomeView = () => {
                 const pubArticles = state.articles.filter((a) => a.status === "published");
                 const trending = [...pubArticles].sort((a, b) => (b.visits || 0) - (a.visits || 0)).slice(0, 5);
                 let daily = null;
-                if (pubArticles.length > 0) {
-                    const seed = parseInt(new Date().toISOString().split("T")[0].replace(/-/g, ""));
-                    daily = pubArticles[Math.floor(getSeededRandom(seed) * pubArticles.length)];
+                if (state.featuredArticleId) {
+                    daily = pubArticles.find(a => a.id === state.featuredArticleId);
                 }
                 return `
         <div class="space-y-12 animate-fade-in">

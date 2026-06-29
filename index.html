@@ -134,7 +134,20 @@
                 const toc = [];
                 const refs = [];
                 let html = sanitized
-                    .replace(/<ref>\{\{cite news\s*\|title=(.*?)\s*\|url=(.*?)\s*\|work=(.*?)\s*\|date=(.*?)\s*(?:\|language=(.*?))?\s*(?:\|access-date=(.*?))?\}\}<\/ref>/gis,(m,title,url,work,date,lang,access)=>(refs.push({title,url,work,date,lang,access}),`<sup><a href="#ref-${refs.length}" class="text-blue-600 hover:underline">[${refs.length}]</a></sup>`))
+                    .replace(/<ref>\s*\{\{cite\s+([^\|]+)\s*([\s\S]*?)\}\}\s*<\/ref>/gis,(m, type, body) => {
+                        const fields = {};
+                        body.split("|").forEach(part => {
+                            const [k, ...v] = part.split("=");
+                            if (k && v.length) fields[k.trim()] = v.join("=").trim();
+                        });
+                        refs.push({
+                            title: fields.title || "Source",
+                            url: fields.url || "#",
+                            work: fields.publisher || fields.work || "",
+                            date: fields.date || "",
+                        });
+                        return `<sup><a href="#ref-${refs.length}">[${refs.length}]</a></sup>`;
+                    }
                     .replace(/^==== (.*?) ====/gm, (m,t)=>`<h4 id="${t.toLowerCase().replace(/\s+/g,"-")}" class="text-lg font-bold mt-4 mb-2 text-gray-800 dark:text-gray-200">${t}</h4>`)
                     .replace(/^=== (.*?) ===/gm, (m,t)=>`<h3 id="${t.toLowerCase().replace(/\s+/g,"-")}" class="text-xl font-bold mt-5 mb-2 text-gray-800 dark:text-gray-200">${t}</h3>`)
                     .replace(/^== (.*?) ==/gm, (m,t)=>(toc.push({id:t.toLowerCase().replace(/\s+/g,"-"),title:t,level:2}),`<h2 id="${t.toLowerCase().replace(/\s+/g,"-")}" class="text-2xl font-bold mt-8 mb-4 border-b border-gray-200 dark:border-gray-700 pb-2 text-gray-900 dark:text-white">${t}</h2>`))
@@ -644,10 +657,10 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
             const startApp = async () => {
                 try {
                     await setPersistence(auth, browserLocalPersistence);
-                    await signInAnonymously(auth);
                 } catch (e) {
-                    console.error("Auth Init Error:", e);
+                    console.error("Persistence error:", e);
                 }
+
                 onAuthStateChanged(auth, async (u) => {
                     if (u) {
                         state.user = u;
@@ -656,21 +669,18 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                                 const userDoc = await getDoc(doc(getPublicCol("users"), u.uid));
                                 if (userDoc.exists()) {
                                     state.userData = userDoc.data();
-                                    localStorage.setItem("lbmedia_username", state.userData.username);
-                                    localStorage.setItem("lbmedia_email", state.userData.email);
                                 }
                             } catch (err) {
-                                console.error("User data fetch error", err);
+                                console.error("User load error", err);
                             }
-                        } else {
-                            state.userData = null;
                         }
                         setupListeners(u);
                         await updateFeaturedArticleIfNeeded();
+                        render();
                     } else {
                         state.user = null;
                         state.userData = null;
-                        unsubscribers.forEach((unsub) => unsub());
+                        unsubscribers.forEach((u) => u());
                         unsubscribers = [];
                         render();
                     }
@@ -941,9 +951,6 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
           </header>
           <div class="flex-1 flex flex-col md:flex-row overflow-hidden">
             <div class="flex-1 border-b md:border-b-0 md:border-r border-gray-200 dark:border-gray-800 flex flex-col relative bg-gray-50 dark:bg-[#0f172a]">
-              <div class="p-3 bg-gray-100 dark:bg-[#1e293b] border-b border-gray-200 dark:border-gray-800 text-xs text-gray-500 font-mono flex space-x-4 overflow-x-auto">
-                <span>= Header =</span><span>== Subheader ==</span><span>'''Bold'''</span><span>''Italic''</span><span>[[Link]]</span><span>* List</span>
-              </div>
               <textarea oninput="window.app.handleEditorInput('content', this.value)" placeholder="Start writing using Wiki markup..." class="flex-1 w-full p-6 bg-transparent resize-none outline-none text-gray-800 dark:text-gray-200 font-mono text-sm leading-relaxed custom-scrollbar">${state.editor.content}</textarea>
             </div>
             <div class="flex-1 overflow-y-auto p-8 bg-white dark:bg-[#1e293b] custom-scrollbar">

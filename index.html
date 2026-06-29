@@ -128,8 +128,43 @@
                         toc.push({ id, title, level: 1 });
                         return `<h1 id="${id}" class="text-4xl font-extrabold mt-10 mb-6 text-gray-900 dark:text-white">${title}</h1>`;
                     })
+                    .replace(/\{\|[\s\S]*?\|\}/g, table => {
+                        let html = '<table class="w-full border border-gray-300 dark:border-gray-700 rounded-xl overflow-hidden my-6">';
+                        const lines = table.split("\n");
+                        for (const line of lines) {
+                            if (line.startsWith("|-")) {
+                                html += "</tr><tr>";
+                            }
+                            else if (line.startsWith("!")) {
+                                html += "<tr>";
+                                html += line.substring(1)
+                                    .split("!!")
+                                    .map(c =>
+                                        `<th class="border px-3 py-2 bg-gray-100 dark:bg-gray-800 text-left">${c.trim()}</th>`
+                                    ).join("");
+                                html += "</tr>";
+                            }
+                            else if (line.startsWith("|")) {
+                                html += "<tr>";
+                                html += line.substring(1)
+                                    .split("||")
+                                    .map(c =>
+                                        `<td class="border px-3 py-2">${c.trim()}</td>`
+                                    ).join("");
+                                html += "</tr>";
+                            }
+                        }
+                        html += "</table>";
+                        return html;
+                    })
                     .replace(/'''(.*?)'''/g, "<strong>$1</strong>")
                     .replace(/''(.*?)''/g, "<em>$1</em>")
+                    .replace(/\[\[File:(https?:\/\/[^\|\]]+)(?:\|(\d+)px)?(?:\|(.*?))?\]\]/gi,(m, url, width, caption) => `
+                        <figure class="my-6 text-center">
+                            <img src="${url}" ${width ? `style="width:${width}px"` : ""} class="mx-auto rounded-xl shadow max-w-full">
+                                ${caption ? `<figcaption class="mt-2 text-sm text-gray-500 dark:text-gray-400">${caption}</figcaption>` : ""}
+                        </figure>`
+                    )
                     .replace(
                         /\[\[(.*?)\]\]/g,
                         '<a href="#" data-internal-link="$1" class="text-blue-600 dark:text-blue-400 hover:underline font-medium">$1</a>'
@@ -137,6 +172,30 @@
                     .replace(
                         /\[(https?:\/\/[^\s]+)\s+(.*?)\]/g,
                         '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">$2</a>'
+                    )
+                    .replace(
+                        /`([^`\n]+)`/g,
+                        '<code class="bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 rounded font-mono text-sm">$1</code>'
+                    )
+                    .replace(
+                        /^> (.*)$/gm,
+                        '<blockquote class="border-l-4 border-blue-500 pl-4 italic my-4 text-gray-600 dark:text-gray-300">$1</blockquote>'
+                    )
+                    .replace(
+                        /\{\{Note\|(.*?)\}\}/g,
+                        `<div class="my-4 rounded-xl border-l-4 border-blue-500 bg-blue-50 dark:bg-blue-900/20 p-4">
+                            <strong>Note:</strong> $1
+                        </div>`
+                    )
+                    .replace(
+                        /\{\{Warning\|(.*?)\}\}/g,
+                        `<div class="my-4 rounded-xl border-l-4 border-red-500 bg-red-50 dark:bg-red-900/20 p-4">
+                            <strong>Warning:</strong> $1
+                        </div>`
+                    )
+                    .replace(
+                        /__(.*?)__/g,
+                        "<u>$1</u>"
                     )
                     .replace(/^\* (.*)/gm, '<li class="ml-6 list-disc mb-1">$1</li>')
                     .replace(/^# (.*)/gm, '<li class="ml-6 list-decimal mb-1">$1</li>')

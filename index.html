@@ -152,6 +152,30 @@
                     .replace(/^=== (.*?) ===/gm, (m,t)=>`<h3 id="${t.toLowerCase().replace(/\s+/g,"-")}" class="text-xl font-bold mt-5 mb-2 text-gray-800 dark:text-gray-200">${t}</h3>`)
                     .replace(/^== (.*?) ==/gm, (m,t)=>(toc.push({id:t.toLowerCase().replace(/\s+/g,"-"),title:t,level:2}),`<h2 id="${t.toLowerCase().replace(/\s+/g,"-")}" class="text-2xl font-bold mt-8 mb-4 border-b border-gray-200 dark:border-gray-700 pb-2 text-gray-900 dark:text-white">${t}</h2>`))
                     .replace(/^= (.*?) =/gm, (m,t)=>(toc.push({id:t.toLowerCase().replace(/\s+/g,"-"),title:t,level:1}),`<h1 id="${t.toLowerCase().replace(/\s+/g,"-")}" class="text-4xl font-extrabold mt-10 mb-6 text-gray-900 dark:text-white">${t}</h1>`))
+                    .replace(/\{\{Infobox([\s\S]*?)\}\}/g, (m, body) => {
+                        let title = "", image = "", caption = "", data = {};
+                        body.split("\n").forEach(l => {
+                            let [k, ...v] = l.replace(/^\s*\|\s*/, "").split("=");
+                            if (!k) return;
+                            k = k.trim().toLowerCase();
+                            v = v.join("=").trim();
+                            if (k === "name") title = v;
+                            else if (k === "image") image = v;
+                            else if (k === "caption") caption = v;
+                            else data[k] = v;
+                        });
+
+                        return `
+                            <div class="w-full max-w-sm float-right ml-6 mb-6 border rounded-xl overflow-hidden bg-gray-50 dark:bg-[#0f172a] shadow">
+                            ${title ? `<div class="bg-gray-200 dark:bg-gray-800 px-3 py-2 font-bold text-center">${title}</div>` : ""}
+                            ${image ? `<img src="${image}" class="w-full object-cover">` : ""}
+                            ${caption ? `<div class="text-xs text-gray-500 p-2 border-b text-center">${caption}</div>` : ""}
+                            <div class="p-3 text-sm space-y-1">
+                            ${Object.entries(data).map(([k,v]) =>
+                            `<div class="flex justify-between gap-2"><span class="font-semibold text-gray-600 dark:text-gray-300">${k}</span><span class="text-right">${v}</span></div>`
+                            ).join("")}
+                            </div></div>`;
+                    })
                     .replace(/\{\|[\s\S]*?\|\}/g, parseTable)
                     .replace(/'''(.*?)'''/g,"<strong>$1</strong>")
                     .replace(/''(.*?)''/g,"<em>$1</em>")
@@ -351,10 +375,12 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                                 role: "user",
                                 publishedCount: 0,
                             });
-                            localStorage.setItem("lbmedia_username", username || "");
                             localStorage.setItem("lbmedia_email", email);
+                            localStorage.setItem("lbmedia_password", password);
                         } else {
                             await signInWithEmailAndPassword(auth, email, password);
+                            localStorage.setItem("lbmedia_email", email);
+                            localStorage.setItem("lbmedia_password", password);
                         }
                         state.authModalOpen = false;
                     } catch (err) {
@@ -363,6 +389,8 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                     render();
                 },
                 logout: () => {
+                    localStorage.removeItem("lbmedia_email");
+                    localStorage.removeItem("lbmedia_password");
                     signOut(auth);
                     window.app.navigate("home");
                 },
@@ -654,9 +682,20 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                     );
                 }
             };
+            const autoSignIn = async () => {
+                const email = localStorage.getItem("lbmedia_email");
+                const password = localStorage.getItem("lbmedia_password");
+                if (!email || !password) return;
+                try {
+                    await signInWithEmailAndPassword(auth, email, password);
+                } catch (e) {
+                    console.warn("Auto sign-in failed:", e.message);
+                }
+            };
             const startApp = async () => {
                 try {
                     await setPersistence(auth, browserLocalPersistence);
+                    await autoSignIn();
                 } catch (e) {
                     console.error("Persistence error:", e);
                 }

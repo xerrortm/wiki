@@ -103,6 +103,15 @@
                 featuredArticleId: null,
                 editor: { title: "", content: "", isSaving: false, isPublishing: false, lastSaved: null },
             };
+            const savedUsername = localStorage.getItem("lbmedia_username");
+            const savedEmail = localStorage.getItem("lbmedia_email");
+            if (savedUsername) {
+                state.userData = {
+                    username: savedUsername,
+                    email: savedEmail || "",
+                    publishedCount: 0,
+                };
+            }
             let unsubscribers = [];
             let autoSaveTimer = null;
             const parseTable = (table) => {
@@ -342,6 +351,8 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                                 role: "user",
                                 publishedCount: 0,
                             });
+                            localStorage.setItem("lbmedia_username", username || "");
+                            localStorage.setItem("lbmedia_email", email);
                         } else {
                             await signInWithEmailAndPassword(auth, email, password);
                         }
@@ -656,7 +667,11 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                         if (!u.isAnonymous) {
                             try {
                                 const userDoc = await getDoc(doc(getPublicCol("users"), u.uid));
-                                if (userDoc.exists()) state.userData = userDoc.data();
+                                if (userDoc.exists()) {
+                                    state.userData = userDoc.data();
+                                    localStorage.setItem("lbmedia_username", state.userData.username);
+                                    localStorage.setItem("lbmedia_email", state.userData.email);
+                                }
                             } catch (err) {
                                 console.error("User data fetch error", err);
                             }

@@ -109,7 +109,9 @@
                 if (!text) return { html: "", toc: [] };
                 let sanitized = text.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "");
                 const toc = [];
+                const refs = [];
                 let html = sanitized
+                    .replace(/<ref>\{\{cite news\s*\|title=(.*?)\s*\|url=(.*?)\s*\|work=(.*?)\s*\|date=(.*?)\s*(?:\|language=(.*?))?\s*(?:\|access-date=(.*?))?\}\}<\/ref>/gis,(m,title,url,work,date,lang,access)=>(refs.push({title,url,work,date,lang,access}),`<sup><a href="#ref-${refs.length}" class="text-blue-600 hover:underline">[${refs.length}]</a></sup>`))
                     .replace(/^==== (.*?) ====/gm, (m,t)=>`<h4 id="${t.toLowerCase().replace(/\s+/g,"-")}" class="text-lg font-bold mt-4 mb-2 text-gray-800 dark:text-gray-200">${t}</h4>`)
                     .replace(/^=== (.*?) ===/gm, (m,t)=>`<h3 id="${t.toLowerCase().replace(/\s+/g,"-")}" class="text-xl font-bold mt-5 mb-2 text-gray-800 dark:text-gray-200">${t}</h3>`)
                     .replace(/^== (.*?) ==/gm, (m,t)=>(toc.push({id:t.toLowerCase().replace(/\s+/g,"-"),title:t,level:2}),`<h2 id="${t.toLowerCase().replace(/\s+/g,"-")}" class="text-2xl font-bold mt-8 mb-4 border-b border-gray-200 dark:border-gray-700 pb-2 text-gray-900 dark:text-white">${t}</h2>`))
@@ -133,9 +135,23 @@
                         return `<p class="mb-4 leading-relaxed">${p}</p>`;
                     })
                     .join("");
-                html = html.replace(/(<li class="[^"]*list-disc[^"]*">.*<\/li>)/s, '<ul class="mb-4">$1</ul>');
-                html = html.replace(/(<li class="[^"]*list-decimal[^"]*">.*<\/li>)/s, '<ol class="mb-4">$1</ol>');
-                return { html, toc };
+                    if (refs.length) {
+                        html += `
+                            <h2 id="references" class="text-2xl font-bold mt-8 mb-4 border-b border-gray-200 dark:border-gray-700 pb-2">
+                                References
+                            </h2>
+                            <ol class="list-decimal ml-6 space-y-3">
+                                ${refs.map((r,i)=>`
+                                    <li id="ref-${i+1}">
+                                        <a href="${r.url}" target="_blank" class="text-blue-600 hover:underline">${r.title}</a>.
+                                        <i>${r.work}</i>. ${r.date}${r.lang ? ` (${r.lang})` : ""}.
+                                    </li>
+                                `).join("")}
+                            </ol>`;
+                    }
+                    html = html.replace(/(<li class="[^"]*list-disc[^"]*">.*<\/li>)/s,'<ul class="mb-4">$1</ul>');
+                    html = html.replace(/(<li class="[^"]*list-decimal[^"]*">.*<\/li>)/s,'<ol class="mb-4">$1</ol>');
+                    return { html, toc };
             };
             const getSeededRandom = (seed) => {
                 let x = Math.sin(seed++) * 10000;

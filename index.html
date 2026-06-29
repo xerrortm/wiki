@@ -89,6 +89,12 @@
             const appId = typeof __app_id !== "undefined" ? __app_id : "lbmedia-app";
             const getPublicCol = (colName) => collection(db, "artifacts", appId, "public", "data", colName);
             const getPrivateCol = (uid, colName) => collection(db, "artifacts", appId, "users", uid, colName);
+            const isWikiProtectedPage = (title) => {
+                return (title || "").trim().toLowerCase().startsWith("wiki:");
+            };
+            const isAdminUser = (userData) => {
+                return userData?.username === "xerrortm";
+            };
             const state = {
                 user: null,
                 userData: null,
@@ -465,12 +471,17 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                     window.app.navigate("editor", draftRef.id);
                 },
                 publishDraft: async () => {
+                    const isProtected = isWikiProtectedPage(state.editor.title);
+                    if (isProtected && !isAdminUser(state.userData)) {
+                        alert("This Wiki page is protected and cannot be published.");
+                        return;
+                    }
                     if (!state.user) return;
                     if (!state.editor.title.trim() || !state.editor.content.trim())
                         return alert("Title and content cannot be empty.");
                     const btn = document.getElementById("publish-btn");
                     btn.disabled = true;
-                    btn.innerHTML = `<i data-lucide="refresh-cw" class="w-5 h-5 animate-spin mr-2"></i> AI Reviewing...`;
+                    btn.innerHTML = `<i data-lucide="refresh-cw" class="w-5 h-5 animate-spin mr-2"></i> Reviewing...`;
                     lucide.createIcons();
                     const draftRef = doc(getPrivateCol(state.user.uid, "drafts"), state.activeDraftId);
                     await updateDoc(draftRef, { status: "reviewing" });
@@ -557,7 +568,7 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                             timestamp: Date.now(),
                             read: false,
                         });
-                        alert(`AI Review Failed:\n- ${review.reasons.join("\n- ")}`);
+                        alert(`Publish Failed:\n- ${review.reasons.join("\n- ")}`);
                         btn.disabled = false;
                         btn.innerHTML = `<i data-lucide="check" class="w-5 h-5 mr-2"></i> Publish`;
                         lucide.createIcons();
@@ -969,6 +980,8 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
         </div>`;
             };
             const renderEditorView = () => {
+                const isProtected = isWikiProtectedPage(state.editor.title);
+                const admin = isAdminUser(state.userData);
                 const parsedPreview =
                     parseWiki(state.editor.content).html ||
                     '<p class="text-gray-400 italic">Preview will appear here...</p>';
@@ -993,6 +1006,18 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
               </button>
             </div>
           </header>
+          ${isProtected ? `
+            <div class="w-full px-6 py-3 text-sm font-medium border-b ${admin 
+                ? "bg-yellow-50 text-yellow-800 border-yellow-200 dark:bg-yellow-900/20 dark:text-yellow-300"
+                : "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-300"
+            }">
+            <i data-lucide="lock"> This is a protected Wiki page that is not meant for the encyclopedia. ${
+            admin 
+                ? "You have admin access."
+                : "You cannot edit or publish this page."
+            }
+            </div>
+            ` : ""}
           <div class="flex-1 flex flex-col md:flex-row overflow-hidden">
             <div class="flex-1 border-b md:border-b-0 md:border-r border-gray-200 dark:border-gray-800 flex flex-col relative bg-gray-50 dark:bg-[#0f172a]">
               <textarea oninput="window.app.handleEditorInput('content', this.value)" placeholder="Start writing using Wiki markup..." class="flex-1 w-full p-6 bg-transparent resize-none outline-none text-gray-800 dark:text-gray-200 font-mono text-sm leading-relaxed custom-scrollbar">${state.editor.content}</textarea>

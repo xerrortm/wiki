@@ -693,13 +693,14 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                 }
             };
             const startApp = async () => {
+                await updateFeaturedArticleIfNeeded();
+                render();
                 try {
                     await setPersistence(auth, browserLocalPersistence);
                     await autoSignIn();
                 } catch (e) {
                     console.error("Persistence error:", e);
                 }
-
                 onAuthStateChanged(auth, async (u) => {
                     if (u) {
                         state.user = u;
@@ -714,8 +715,6 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                             }
                         }
                         setupListeners(u);
-                        await updateFeaturedArticleIfNeeded();
-                        render();
                     } else {
                         state.user = null;
                         state.userData = null;

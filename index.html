@@ -58,6 +58,8 @@
                 onAuthStateChanged,
                 signInAnonymously,
                 signInWithCustomToken,
+                setPersistence,
+                browserLocalPersistence
             } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
             import {
                 getFirestore,
@@ -103,15 +105,6 @@
                 featuredArticleId: null,
                 editor: { title: "", content: "", isSaving: false, isPublishing: false, lastSaved: null },
             };
-            const savedUsername = localStorage.getItem("lbmedia_username");
-            const savedEmail = localStorage.getItem("lbmedia_email");
-            if (savedUsername) {
-                state.userData = {
-                    username: savedUsername,
-                    email: savedEmail || "",
-                    publishedCount: 0,
-                };
-            }
             let unsubscribers = [];
             let autoSaveTimer = null;
             const parseTable = (table) => {
@@ -648,9 +641,9 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                     );
                 }
             };
-            // Auth Initialization
             const startApp = async () => {
                 try {
+                    await setPersistence(auth, browserLocalPersistence);
                     await signInAnonymously(auth);
                 } catch (e) {
                     console.error("Auth Init Error:", e);

@@ -105,6 +105,33 @@
             };
             let unsubscribers = [];
             let autoSaveTimer = null;
+            const parseTable = (table) => {
+                let html = '<table class="w-full border border-gray-300 dark:border-gray-700 my-6 rounded-xl overflow-hidden">';
+                const lines = table.split("\n");
+                for (const line of lines) {
+                    if (line.startsWith("|-")) {
+                        html += "</tr><tr>";
+                    } else if (line.startsWith("!")) {
+                        html += "<tr>";
+                        html += line
+                            .substring(1)
+                            .split("!!")
+                            .map(c => `<th class="border px-3 py-2 bg-gray-100 dark:bg-gray-800 text-left">${c.trim()}</th>`)
+                            .join("");
+                        html += "</tr>";
+                    } else if (line.startsWith("|")) {
+                        html += "<tr>";
+                        html += line
+                            .substring(1)
+                            .split("||")
+                            .map(c => `<td class="border px-3 py-2">${c.trim()}</td>`)
+                            .join("");
+                        html += "</tr>";
+                    }
+                }
+                html += "</table>";
+                return html;
+            };
             const parseWiki = (text) => {
                 if (!text) return { html: "", toc: [] };
                 let sanitized = text.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "");

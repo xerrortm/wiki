@@ -502,11 +502,14 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                         // If this draft came from "Propose Edit", update the existing article.
                         if (draftData.articleId) {
                             articleRef = doc(getPublicCol("articles"), draftData.articleId);
-                            await updateDoc(articleRef, {
-                                title: state.editor.title,
-                                content: state.editor.content,
-                                updatedAt: Date.now(),
-                            });
+                            if (draftData.articleId) {
+                                articleRef = doc(getPublicCol("articles"), draftData.articleId);
+                                await updateDoc(articleRef, {
+                                    title: state.editor.title,
+                                    content: state.editor.content,
+                                    updatedAt: Date.now(),
+                                });
+                            }
                             versionSummary = "Edited article";
                         } else {
                             // Otherwise create a brand new article.
@@ -536,16 +539,6 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                                 { merge: true }
                             );
                         }
-                        // Save version history
-                        await addDoc(getPublicCol("versions"), {
-                            articleId: articleRef.id,
-                            content: state.editor.content,
-                            editorUid: state.user.uid,
-                            editorName: state.userData?.username || "Unknown",
-                            timestamp: Date.now(),
-                            summary: versionSummary,
-                        });
-                        // Delete the draft
                         await deleteDoc(draftRef);
                         // Notify user
                         await addDoc(getPrivateCol(state.user.uid, "notifications"), {
@@ -889,7 +882,7 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
               <div id="mobile-search-dropdown" class="hidden absolute top-full left-0 right-0 mt-2 bg-white dark:bg-[#1e293b] rounded-2xl shadow-xl border border-gray-100 dark:border-gray-800 overflow-hidden z-50 text-left"></div>
             </div>
             <div class="mt-8 flex justify-center space-x-4 relative z-10">
-              <button onclick="window.app.createNewDraft()" class="px-8 py-3 rounded-full bg-blue-600 text-white font-semibold hover:bg-blue-700 hover:shadow-lg transition-all shadow-blue-500/30">Write an Article</button>
+              <button onclick="window.app.navigateToArticle('FD8qsrnEe2fx7hJ82M8P')" class="px-8 py-3 rounded-full bg-blue-600 text-white font-semibold hover:bg-blue-700 hover:shadow-lg transition-all shadow-blue-500/30">Get Started</button>
               <button onclick="window.app.randomArticle()" class="px-8 py-3 rounded-full bg-white dark:bg-[#1e293b] text-gray-900 dark:text-white font-semibold border border-gray-200 dark:border-gray-700 hover:shadow-md transition-all">Random Article</button>
             </div>
           </section>

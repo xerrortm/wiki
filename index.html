@@ -257,6 +257,12 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                     document.documentElement.classList.toggle("dark", state.darkMode);
                     render();
                 },
+                randomArticle: () => {
+                    const published = state.articles.filter(a => a.status === "published");
+                    if (!published.length) return alert("No articles available!");
+                    const random = published[Math.floor(Math.random() * published.length)];
+                    window.app.navigateToArticle(random.id);
+                },
                 navigate: async (view, id = null) => {
                     state.currentView = view;
                     if (view === "article") state.activeArticleId = id;
@@ -335,7 +341,7 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                                           (r) => `
             <div onclick="window.app.navigateToArticle('${r.id}')" class="px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer flex flex-col transition-colors border-b border-gray-100 dark:border-gray-800 last:border-0">
               <span class="font-semibold text-gray-900 dark:text-white">${r.title}</span>
-              <span class="text-sm text-gray-500 dark:text-gray-400 truncate">${r.content.substring(0, 80)}...</span>
+              <span class="text-sm text-gray-500 dark:text-gray-400 truncate">${getArticlePreview(r.content || "", 80)}...</span>
             </div>
           `
                                       )
@@ -566,7 +572,7 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                     }
                 },
             };
-            const getArticlePreview = (content, length = 120) => {
+            const getArticlePreview = (content, length = 100) => {
                 const parsed = parseWiki(content);
                 const div = document.createElement("div");
                 div.innerHTML = parsed.html;
@@ -873,7 +879,7 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
             </div>
             <div class="mt-8 flex justify-center space-x-4 relative z-10">
               <button onclick="window.app.createNewDraft()" class="px-8 py-3 rounded-full bg-blue-600 text-white font-semibold hover:bg-blue-700 hover:shadow-lg transition-all shadow-blue-500/30">Write an Article</button>
-              <button onclick="window.app.navigate('home')" class="px-8 py-3 rounded-full bg-white dark:bg-[#1e293b] text-gray-900 dark:text-white font-semibold border border-gray-200 dark:border-gray-700 hover:shadow-md transition-all">Random Article</button>
+              <button onclick="window.app.randomArticle()" class="px-8 py-3 rounded-full bg-white dark:bg-[#1e293b] text-gray-900 dark:text-white font-semibold border border-gray-200 dark:border-gray-700 hover:shadow-md transition-all">Random Article</button>
             </div>
           </section>
           <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -1076,7 +1082,7 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
     </span>
   </div>
   <p class="text-xs text-gray-500 line-clamp-2 mb-4 h-8">
-    ${(d.content || "").substring(0, 100) || "No content yet..."}
+    ${getArticlePreview(d.content || "", 100) || "No content yet..."}
   </p>
   <div class="text-xs text-gray-400">
     Last edited: ${new Date(d.lastEdited).toLocaleDateString()}

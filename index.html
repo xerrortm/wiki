@@ -1,0 +1,1018 @@
+<!doctype html>
+<html lang="en" class="light">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>LBmedia - The Free Encyclopedia</title>
+        <!-- Tailwind CSS -->
+        <script src="https://cdn.tailwindcss.com"></script>
+        <script>
+            tailwind.config = {
+                darkMode: "class",
+                theme: {
+                    extend: {
+                        typography: (theme) => ({
+                            DEFAULT: {
+                                css: {
+                                    color: theme("colors.gray.900"),
+                                    a: {
+                                        color: theme("colors.blue.600"),
+                                        "&:hover": { color: theme("colors.blue.500") },
+                                    },
+                                },
+                            },
+                            invert: {
+                                css: {
+                                    color: theme("colors.gray.100"),
+                                    a: {
+                                        color: theme("colors.blue.400"),
+                                        "&:hover": { color: theme("colors.blue.300") },
+                                    },
+                                },
+                            },
+                        }),
+                    },
+                },
+            };
+        </script>
+        <style type="text/tailwindcss">
+            @layer utilities {
+                .custom-scrollbar::-webkit-scrollbar {
+                    width: 6px;
+                }
+                .custom-scrollbar::-webkit-scrollbar-track {
+                    background: transparent;
+                }
+                .custom-scrollbar::-webkit-scrollbar-thumb {
+                    @apply bg-gray-300 dark:bg-gray-600 rounded-full;
+                }
+            }
+        </style>
+        <!-- Lucide Icons -->
+        <script src="https://unpkg.com/lucide@latest"></script>
+        <!-- Application Logic -->
+        <script type="module">
+            import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+            import {
+                getAuth,
+                signInWithEmailAndPassword,
+                createUserWithEmailAndPassword,
+                signOut,
+                onAuthStateChanged,
+                signInAnonymously,
+                signInWithCustomToken,
+            } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+            import {
+                getFirestore,
+                collection,
+                doc,
+                setDoc,
+                getDoc,
+                getDocs,
+                onSnapshot,
+                addDoc,
+                updateDoc,
+                deleteDoc,
+            } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+            // --- CONFIGURATION & SETUP ---
+            const firebaseConfig = {
+                apiKey: "AIzaSyA_XrD0M2R-V0IvU_lrxlZ82wIp_K7QoCg",
+                authDomain: "error-inc.firebaseapp.com",
+                databaseURL: "https://error-inc-default-rtdb.firebaseio.com",
+                projectId: "error-inc",
+                storageBucket: "error-inc.firebasestorage.app",
+                messagingSenderId: "876188868410",
+                appId: "1:876188868410:web:ca7de451707bd9975c7a03",
+            };
+            const app = initializeApp(firebaseConfig);
+            const auth = getAuth(app);
+            const db = getFirestore(app);
+            const appId = typeof __app_id !== "undefined" ? __app_id : "lbmedia-app";
+            const getPublicCol = (colName) => collection(db, "artifacts", appId, "public", "data", colName);
+            const getPrivateCol = (uid, colName) => collection(db, "artifacts", appId, "users", uid, colName);
+            // --- STATE MANAGEMENT ---
+            const state = {
+                user: null,
+                userData: null,
+                darkMode: false,
+                articles: [],
+                drafts: [],
+                notifications: [],
+                currentView: "home", // home, article, editor, dashboard
+                activeArticleId: null,
+                activeDraftId: null,
+                authModalOpen: false,
+                authMode: "login", // login, signup
+                searchQuery: "",
+                editor: { title: "", content: "", isSaving: false, isPublishing: false, lastSaved: null },
+            };
+            let unsubscribers = [];
+            let autoSaveTimer = null;
+            // --- UTILITIES ---
+            const parseWiki = (text) => {
+                if (!text) return { html: "", toc: [] };
+                let sanitized = text.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "");
+                const toc = [];
+                let html = sanitized
+                    .replace(/^==== (.*?) ====/gm, (m, title) => {
+                        const id = title.toLowerCase().replace(/\s+/g, "-");
+                        return `<h4 id="${id}" class="text-lg font-bold mt-4 mb-2 text-gray-800 dark:text-gray-200">${title}</h4>`;
+                    })
+                    .replace(/^=== (.*?) ===/gm, (m, title) => {
+                        const id = title.toLowerCase().replace(/\s+/g, "-");
+                        return `<h3 id="${id}" class="text-xl font-bold mt-5 mb-2 text-gray-800 dark:text-gray-200">${title}</h3>`;
+                    })
+                    .replace(/^== (.*?) ==/gm, (m, title) => {
+                        const id = title.toLowerCase().replace(/\s+/g, "-");
+                        toc.push({ id, title, level: 2 });
+                        return `<h2 id="${id}" class="text-2xl font-bold mt-8 mb-4 border-b border-gray-200 dark:border-gray-700 pb-2 text-gray-900 dark:text-white">${title}</h2>`;
+                    })
+                    .replace(/^= (.*?) =/gm, (m, title) => {
+                        const id = title.toLowerCase().replace(/\s+/g, "-");
+                        toc.push({ id, title, level: 1 });
+                        return `<h1 id="${id}" class="text-4xl font-extrabold mt-10 mb-6 text-gray-900 dark:text-white">${title}</h1>`;
+                    })
+                    .replace(/'''(.*?)'''/g, "<strong>$1</strong>")
+                    .replace(/''(.*?)''/g, "<em>$1</em>")
+                    .replace(
+                        /\[\[(.*?)\]\]/g,
+                        '<a href="#" data-internal-link="$1" class="text-blue-600 dark:text-blue-400 hover:underline font-medium">$1</a>'
+                    )
+                    .replace(
+                        /\[(https?:\/\/[^\s]+)\s+(.*?)\]/g,
+                        '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">$2</a>'
+                    )
+                    .replace(/^\* (.*)/gm, '<li class="ml-6 list-disc mb-1">$1</li>')
+                    .replace(/^# (.*)/gm, '<li class="ml-6 list-decimal mb-1">$1</li>')
+                    .split("\n\n")
+                    .map((p) => {
+                        if (p.trim().startsWith("<h") || p.trim().startsWith("<li")) return p;
+                        return `<p class="mb-4 leading-relaxed">${p}</p>`;
+                    })
+                    .join("");
+                html = html.replace(/(<li class="[^"]*list-disc[^"]*">.*<\/li>)/s, '<ul class="mb-4">$1</ul>');
+                html = html.replace(/(<li class="[^"]*list-decimal[^"]*">.*<\/li>)/s, '<ol class="mb-4">$1</ol>');
+                return { html, toc };
+            };
+            const getSeededRandom = (seed) => {
+                let x = Math.sin(seed++) * 10000;
+                return x - Math.floor(x);
+            };
+            const reviewArticleWithAI = async (title, content) => {
+                const API_KEY = "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";
+                try {
+                    const prompt = `You are a moderator for a modern encyclopedia called LBmedia. Review the draft.
+Title: "${title}"
+Content: "${content}"
+Evaluate:
+Before anything else, quickly reject submissions that clearly break the basic rules or are obviously not allowed.
+Then check if the topic is actually important enough for an encyclopedia and whether it has reliable sources to support it. After that, read the whole article to make sure it is written in a neutral, informative, and encyclopedic style. If the topic is not important or has no proof, it should be declined no matter how well it is written. If everything checks out and there are no issues, the submission can be safely accepted.
+Respond strictly in JSON format without markdown wrapping: {"accepted": boolean, "reasons": ["Array of strings"]}`;
+                    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            Authorization: `Bearer ${API_KEY}`,
+                        },
+                        body: JSON.stringify({
+                            model: "llama-3.1-8b-instant",
+                            messages: [
+                                {
+                                    role: "user",
+                                    content: prompt,
+                                },
+                            ],
+                            temperature: 0.2,
+                        }),
+                    });
+                    const data = await response.json();
+                    const text = data?.choices?.[0]?.message?.content;
+                    return JSON.parse(text || '{"accepted": false, "reasons": ["Parse error"]}');
+                } catch (err) {
+                    return { accepted: false, reasons: ["AI service error."] };
+                }
+            };
+            // --- ACTIONS EXPOSED GLOBALLY ---
+            window.app = {
+                toggleDarkMode: () => {
+                    state.darkMode = !state.darkMode;
+                    document.documentElement.classList.toggle("dark", state.darkMode);
+                    render();
+                },
+                navigate: async (view, id = null) => {
+                    state.currentView = view;
+                    if (view === "article") state.activeArticleId = id;
+                    if (view === "editor") {
+                        state.activeDraftId = id;
+                        render();
+                        if (id) await loadDraftData(id);
+                        return;
+                    }
+                    state.searchQuery = "";
+                    render();
+                },
+                clearNotifications: async () => {
+                    if (!state.user) return;
+                    if (!confirm("Clear all notifications?")) return;
+                    try {
+                        const colRef = getPrivateCol(state.user.uid, "notifications");
+                        const snapshot = await getDocs(colRef);
+                        const deletes = snapshot.docs.map((d) => deleteDoc(doc(colRef, d.id)));
+                        await Promise.all(deletes);
+                    } catch (e) {
+                        console.error(e);
+                    }
+                },
+                deleteDraft: async (id) => {
+                    if (!state.user) return;
+                    if (!confirm("Delete this draft?")) return;
+                    try {
+                        await deleteDoc(doc(getPrivateCol(state.user.uid, "drafts"), id));
+                        if (state.activeDraftId === id) {
+                            state.activeDraftId = null;
+                            state.editor = {
+                                title: "",
+                                content: "",
+                                lastSaved: null,
+                            };
+                        }
+                        render();
+                    } catch (err) {
+                        console.error(err);
+                    }
+                },
+                navigateToArticle: async (id) => {
+                    window.app.navigate("article", id);
+                    try {
+                        if (!state.user) return;
+                        const ref = doc(getPublicCol("articles"), id);
+                        const d = await getDoc(ref);
+                        if (d.exists()) await updateDoc(ref, { visits: (d.data().visits || 0) + 1 });
+                    } catch (e) {
+                        console.error("Visit tracking error", e);
+                    }
+                },
+                handleSearch: (e) => {
+                    state.searchQuery = e.target.value;
+                    const searchDropdown = document.getElementById("search-dropdown");
+                    if (searchDropdown) {
+                        const results = state.articles
+                            .filter(
+                                (a) =>
+                                    a.status === "published" &&
+                                    (a.title.toLowerCase().includes(state.searchQuery.toLowerCase()) ||
+                                        a.content.toLowerCase().includes(state.searchQuery.toLowerCase()))
+                            )
+                            .slice(0, 5);
+                        if (!state.searchQuery.trim()) {
+                            searchDropdown.innerHTML = "";
+                            searchDropdown.classList.add("hidden");
+                            return;
+                        }
+                        searchDropdown.classList.remove("hidden");
+                        searchDropdown.innerHTML =
+                            results.length > 0
+                                ? results
+                                      .map(
+                                          (r) => `
+            <div onclick="window.app.navigateToArticle('${r.id}')" class="px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer flex flex-col transition-colors border-b border-gray-100 dark:border-gray-800 last:border-0">
+              <span class="font-semibold text-gray-900 dark:text-white">${r.title}</span>
+              <span class="text-sm text-gray-500 dark:text-gray-400 truncate">${r.content.substring(0, 80)}...</span>
+            </div>
+          `
+                                      )
+                                      .join("")
+                                : `<div class="px-4 py-4 text-center text-gray-500">No results found.</div>`;
+                    }
+                },
+                openAuthModal: (mode = "login") => {
+                    state.authModalOpen = true;
+                    state.authMode = mode;
+                    render();
+                },
+                closeAuthModal: () => {
+                    state.authModalOpen = false;
+                    render();
+                },
+                switchAuthMode: (mode) => {
+                    state.authMode = mode;
+                    render();
+                },
+                submitAuth: async (e) => {
+                    e.preventDefault();
+                    const email = e.target.email.value;
+                    const password = e.target.password.value;
+                    const username = e.target.username ? e.target.username.value : "";
+                    const btn = document.getElementById("auth-submit-btn");
+                    btn.innerHTML = `<i data-lucide="refresh-cw" class="animate-spin mx-auto"></i>`;
+                    lucide.createIcons();
+                    try {
+                        if (state.authMode === "signup") {
+                            const cred = await createUserWithEmailAndPassword(auth, email, password);
+                            await setDoc(doc(getPublicCol("users"), cred.user.uid), {
+                                uid: cred.user.uid,
+                                username,
+                                email,
+                                joinDate: Date.now(),
+                                role: "user",
+                                publishedCount: 0,
+                            });
+                        } else {
+                            await signInWithEmailAndPassword(auth, email, password);
+                        }
+                        state.authModalOpen = false;
+                    } catch (err) {
+                        alert(err.message);
+                    }
+                    render();
+                },
+                logout: () => {
+                    signOut(auth);
+                    window.app.navigate("home");
+                },
+                createNewDraft: async (initialTitle = "") => {
+                    if (!state.user) return window.app.openAuthModal("login");
+                    try {
+                        const newDraftRef = doc(getPrivateCol(state.user.uid, "drafts"));
+                        await setDoc(newDraftRef, {
+                            title: initialTitle,
+                            content: "",
+                            status: "draft",
+                            lastEdited: Date.now(),
+                            authorUid: state.user.uid,
+                            authorName: state.userData?.username || "Unknown",
+                        });
+                        window.app.navigate("editor", newDraftRef.id);
+                    } catch (err) {
+                        console.error(err);
+                    }
+                },
+                handleEditorInput: (field, value) => {
+                    state.editor[field] = value;
+                    if (field === "content") {
+                        const parsed = parseWiki(value);
+                        document.getElementById("editor-preview").innerHTML =
+                            parsed.html || '<p class="text-gray-400 italic">Preview will appear here...</p>';
+                    }
+                    if (field === "title") {
+                        document.getElementById("editor-preview-title").innerText = value || "Untitled Draft";
+                    }
+                    clearTimeout(autoSaveTimer);
+                    document.getElementById("editor-save-status").innerHTML =
+                        `<i data-lucide="refresh-cw" class="w-4 h-4 mr-1.5 animate-spin"></i> Saving...`;
+                    lucide.createIcons();
+                    autoSaveTimer = setTimeout(async () => {
+                        if (!state.activeDraftId || !state.user) return;
+                        try {
+                            await updateDoc(doc(getPrivateCol(state.user.uid, "drafts"), state.activeDraftId), {
+                                title: state.editor.title,
+                                content: state.editor.content,
+                                lastEdited: Date.now(),
+                            });
+                            const time = new Date().toLocaleTimeString();
+                            document.getElementById("editor-save-status").innerHTML =
+                                `<i data-lucide="save" class="w-4 h-4 mr-1.5"></i> Saved ${time}`;
+                            lucide.createIcons();
+                        } catch (e) {
+                            console.error("Autosave failed", e);
+                        }
+                    }, 1500);
+                },
+                proposeEdit: async (articleId) => {
+                    if (!state.user) return window.app.openAuthModal("login");
+                    const article = state.articles.find((a) => a.id === articleId);
+                    if (!article) return;
+                    const draftRef = doc(getPrivateCol(state.user.uid, "drafts"));
+                    await setDoc(draftRef, {
+                        title: article.title,
+                        content: article.content,
+                        articleId: article.id,
+                        status: "draft",
+                        lastEdited: Date.now(),
+                        authorUid: state.user.uid,
+                        authorName: state.userData?.username || "Unknown",
+                    });
+                    window.app.navigate("editor", draftRef.id);
+                },
+                publishDraft: async () => {
+                    if (!state.user) return;
+                    if (!state.editor.title.trim() || !state.editor.content.trim())
+                        return alert("Title and content cannot be empty.");
+                    const btn = document.getElementById("publish-btn");
+                    btn.disabled = true;
+                    btn.innerHTML = `<i data-lucide="refresh-cw" class="w-5 h-5 animate-spin mr-2"></i> AI Reviewing...`;
+                    lucide.createIcons();
+                    const draftRef = doc(getPrivateCol(state.user.uid, "drafts"), state.activeDraftId);
+                    await updateDoc(draftRef, { status: "reviewing" });
+                    const review = await reviewArticleWithAI(state.editor.title, state.editor.content);
+                    await addDoc(getPublicCol("reviews"), {
+                        draftId: state.activeDraftId,
+                        authorUid: state.user.uid,
+                        title: state.editor.title,
+                        accepted: review.accepted,
+                        reasons: review.reasons,
+                        timestamp: Date.now(),
+                    });
+                    if (review.accepted) {
+                        const draftSnap = await getDoc(draftRef);
+                        const draftData = draftSnap.data();
+                        let articleRef;
+                        let versionSummary;
+                        // If this draft came from "Propose Edit", update the existing article.
+                        if (draftData.articleId) {
+                            articleRef = doc(getPublicCol("articles"), draftData.articleId);
+                            await updateDoc(articleRef, {
+                                title: state.editor.title,
+                                content: state.editor.content,
+                                updatedAt: Date.now(),
+                            });
+                            versionSummary = "Edited article";
+                        } else {
+                            // Otherwise create a brand new article.
+                            articleRef = doc(getPublicCol("articles"));
+                            await setDoc(articleRef, {
+                                title: state.editor.title,
+                                content: state.editor.content,
+                                authorUid: state.user.uid,
+                                authorName: state.userData?.username || "Unknown",
+                                createdAt: Date.now(),
+                                updatedAt: Date.now(),
+                                visits: 0,
+                                status: "published",
+                            });
+                            versionSummary = "Initial publication";
+                            // Increase published count only for new articles.
+                            await setDoc(
+                                doc(getPublicCol("users"), state.user.uid),
+                                {
+                                    uid: state.user.uid,
+                                    username: state.userData?.username || "Unknown",
+                                    email: state.user.email || "",
+                                    joinDate: state.userData?.joinDate || Date.now(),
+                                    role: state.userData?.role || "user",
+                                    publishedCount: (state.userData?.publishedCount || 0) + 1,
+                                },
+                                { merge: true }
+                            );
+                        }
+                        // Save version history
+                        await addDoc(getPublicCol("versions"), {
+                            articleId: articleRef.id,
+                            content: state.editor.content,
+                            editorUid: state.user.uid,
+                            editorName: state.userData?.username || "Unknown",
+                            timestamp: Date.now(),
+                            summary: versionSummary,
+                        });
+                        // Delete the draft
+                        await deleteDoc(draftRef);
+                        // Notify user
+                        await addDoc(getPrivateCol(state.user.uid, "notifications"), {
+                            message: draftData.articleId
+                                ? `Your edit to "${state.editor.title}" was approved!`
+                                : `Your article "${state.editor.title}" was approved and published!`,
+                            type: "success",
+                            timestamp: Date.now(),
+                            read: false,
+                        });
+                        // Open the article
+                        window.app.navigateToArticle(articleRef.id);
+                    } else {
+                        await updateDoc(draftRef, {
+                            status: "rejected",
+                        });
+                        await addDoc(getPrivateCol(state.user.uid, "notifications"), {
+                            message: `Your draft "${state.editor.title}" was rejected. Reasons: ${review.reasons.join(", ")}`,
+                            type: "error",
+                            timestamp: Date.now(),
+                            read: false,
+                        });
+                        alert(`AI Review Failed:\n- ${review.reasons.join("\n- ")}`);
+                        btn.disabled = false;
+                        btn.innerHTML = `<i data-lucide="check" class="w-5 h-5 mr-2"></i> Publish`;
+                        lucide.createIcons();
+                    }
+                },
+                markNotifRead: async (id) => {
+                    if (!state.user) return;
+                    try {
+                        await updateDoc(doc(getPrivateCol(state.user.uid, "notifications"), id), { read: true });
+                    } catch (e) {
+                        console.error(e);
+                    }
+                },
+            };
+            const getArticlePreview = (content, length = 120) => {
+                const parsed = parseWiki(content);
+                const div = document.createElement("div");
+                div.innerHTML = parsed.html;
+                let text = div.textContent || div.innerText || "";
+                text = text.replace(/\s+/g, " ").trim();
+                return text.length > length ? text.substring(0, length) + "..." : text;
+            };
+            // --- DATA LOADING & INIT ---
+            const loadDraftData = async (id) => {
+                if (!state.user) return;
+                try {
+                    const snap = await getDoc(doc(getPrivateCol(state.user.uid, "drafts"), id));
+                    if (!snap.exists()) return;
+                    const d = snap.data();
+                    state.editor = {
+                        ...state.editor,
+                        title: d.title || "",
+                        content: d.content || "",
+                        lastSaved: d.lastEdited ? new Date(d.lastEdited) : null,
+                    };
+                    // If editor already exists, update it directly.
+                    const titleInput = document.querySelector('input[placeholder="Article Title..."]');
+                    const textarea = document.querySelector("textarea");
+                    if (titleInput) titleInput.value = state.editor.title;
+                    if (textarea) textarea.value = state.editor.content;
+                    const preview = parseWiki(state.editor.content);
+                    const previewTitle = document.getElementById("editor-preview-title");
+                    if (previewTitle) previewTitle.innerText = state.editor.title || "Untitled Draft";
+                    const previewDiv = document.getElementById("editor-preview");
+                    if (previewDiv) previewDiv.innerHTML = preview.html || "<p>No preview.</p>";
+                    const saveStatus = document.getElementById("editor-save-status");
+                    if (saveStatus) saveStatus.innerHTML = `<i data-lucide="save" class="w-4 h-4 mr-1.5"></i> Draft`;
+                    lucide.createIcons();
+                } catch (err) {
+                    console.error(err);
+                }
+            };
+            const setupListeners = (user) => {
+                // Clear old listeners
+                unsubscribers.forEach((u) => u());
+                unsubscribers = [];
+                if (!user) return;
+                // 1. Listen to Public Articles (Only after Auth is verified to fix Permission Error)
+                unsubscribers.push(
+                    onSnapshot(
+                        getPublicCol("articles"),
+                        (snapshot) => {
+                            state.articles = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+                            if (state.currentView !== "editor") render(); // Don't disrupt typing
+                        },
+                        (err) => console.error("Articles error:", err)
+                    )
+                );
+                if (user && !user.isAnonymous) {
+                    // 2. Listen to Private Drafts
+                    unsubscribers.push(
+                        onSnapshot(
+                            getPrivateCol(user.uid, "drafts"),
+                            (snapshot) => {
+                                state.drafts = snapshot.docs
+                                    .map((doc) => ({ id: doc.id, ...doc.data() }))
+                                    .sort((a, b) => b.lastEdited - a.lastEdited);
+                                if (state.currentView === "dashboard") render();
+                            },
+                            (err) => console.error("Drafts error:", err)
+                        )
+                    );
+                    // 3. Listen to Notifications
+                    unsubscribers.push(
+                        onSnapshot(
+                            getPrivateCol(user.uid, "notifications"),
+                            (snapshot) => {
+                                state.notifications = snapshot.docs
+                                    .map((doc) => ({ id: doc.id, ...doc.data() }))
+                                    .sort((a, b) => b.timestamp - a.timestamp);
+                                if (["home", "dashboard", "article"].includes(state.currentView)) render();
+                            },
+                            (err) => console.error("Notifications error:", err)
+                        )
+                    );
+                }
+            };
+            // Auth Initialization
+            const startApp = async () => {
+                try {
+                    await signInAnonymously(auth);
+                } catch (e) {
+                    console.error("Auth Init Error:", e);
+                }
+                onAuthStateChanged(auth, async (u) => {
+                    if (u) {
+                        state.user = u;
+                        if (!u.isAnonymous) {
+                            try {
+                                const userDoc = await getDoc(doc(getPublicCol("users"), u.uid));
+                                if (userDoc.exists()) state.userData = userDoc.data();
+                            } catch (err) {
+                                console.error("User data fetch error", err);
+                            }
+                        } else {
+                            state.userData = null;
+                        }
+                        setupListeners(u); // Safe to attach listeners now
+                    } else {
+                        state.user = null;
+                        state.userData = null;
+                        unsubscribers.forEach((unsub) => unsub());
+                        unsubscribers = [];
+                        render();
+                    }
+                });
+            };
+            startApp();
+            // --- RENDER ENGINE ---
+            const render = () => {
+                const root = document.getElementById("app-root");
+                if (state.currentView === "editor") {
+                    // Full screen override for editor to avoid scrollbar jump
+                    root.className = `min-h-screen overflow-hidden transition-colors duration-300 font-sans ${state.darkMode ? "bg-[#0f172a] text-gray-100" : "bg-gray-50 text-gray-900"}`;
+                } else {
+                    root.className = `min-h-screen transition-colors duration-300 font-sans ${state.darkMode ? "bg-[#0f172a] text-gray-100" : "bg-gray-50 text-gray-900"}`;
+                }
+                root.innerHTML = `
+        ${renderNavbar()}
+        <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 h-full" onclick="handleInternalLinks(event)">
+          ${renderCurrentView()}
+        </main>
+        ${state.currentView !== "editor" ? renderFooter() : ""}
+        ${state.authModalOpen ? renderAuthModal() : ""}
+      `;
+                lucide.createIcons();
+            };
+            // Handle global clicks for internal wiki links
+            window.handleInternalLinks = (e) => {
+                const target = e.target.closest("a[data-internal-link]");
+                if (target) {
+                    e.preventDefault();
+                    const title = target.getAttribute("data-internal-link");
+                    const pubArticles = state.articles.filter((a) => a.status === "published");
+                    const article = pubArticles.find((a) => a.title.toLowerCase() === title.toLowerCase());
+                    if (article) {
+                        window.app.navigateToArticle(article.id);
+                    } else {
+                        if (state.user && !state.user.isAnonymous) {
+                            window.app.createNewDraft(title);
+                        } else {
+                            window.app.openAuthModal("login");
+                        }
+                    }
+                }
+            };
+            // Components
+            const renderNavbar = () => {
+                const unreadCount = state.notifications.filter((n) => !n.read).length;
+                return `
+      <nav class="sticky top-0 z-40 bg-white/80 dark:bg-[#1e293b]/80 backdrop-blur-lg border-b border-gray-200 dark:border-gray-800 transition-colors duration-300">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div class="flex justify-between items-center h-16">
+            <div class="flex items-center cursor-pointer" onclick="window.app.navigate('home')">
+              <div class="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white shadow-lg shadow-blue-500/30">
+                <i data-lucide="book-open"></i>
+              </div>
+              <span class="ml-3 text-2xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-700 dark:from-blue-400 dark:to-indigo-400">LBmedia</span>
+            </div>
+            <div class="flex-1 max-w-2xl mx-8 relative hidden md:block">
+              <div class="relative group">
+                <i data-lucide="search" class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 group-focus-within:text-blue-500 transition-colors w-5 h-5"></i>
+                <input type="text" placeholder="Search encyclopedia..." oninput="window.app.handleSearch(event)"
+                  class="w-full bg-gray-100 dark:bg-[#0f172a] border border-transparent focus:border-blue-500 focus:bg-white dark:focus:bg-[#1e293b] rounded-full py-2.5 pl-10 pr-4 outline-none transition-all duration-300 shadow-sm" />
+              </div>
+              <div id="search-dropdown" class="hidden absolute top-full left-0 right-0 mt-2 bg-white dark:bg-[#1e293b] rounded-2xl shadow-xl border border-gray-100 dark:border-gray-800 overflow-hidden z-50"></div>
+            </div>
+            <div class="flex items-center space-x-3">
+              <button onclick="window.app.toggleDarkMode()" class="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-600 dark:text-gray-300">
+                <i data-lucide="${state.darkMode ? "sun" : "moon"}" class="w-5 h-5"></i>
+              </button>
+              ${
+                  state.user && !state.user.isAnonymous
+                      ? `
+                <button onclick="window.app.navigate('dashboard')" class="p-2 relative rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-600 dark:text-gray-300">
+                  <i data-lucide="bell" class="w-5 h-5"></i>
+                  ${unreadCount > 0 ? `<span class="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white dark:border-gray-800"></span>` : ""}
+                </button>
+                <button onclick="window.app.createNewDraft()" class="hidden sm:flex items-center space-x-1 px-4 py-2 rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors font-medium text-sm">
+                  <i data-lucide="edit-3" class="w-4 h-4"></i><span>Write</span>
+                </button>
+                <div class="relative group cursor-pointer" onclick="window.app.navigate('dashboard')">
+                  <div class="w-9 h-9 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold shadow-md">
+                    ${state.userData?.username?.charAt(0).toUpperCase() || "U"}
+                  </div>
+                </div>
+              `
+                      : `
+                <button onclick="window.app.openAuthModal('login')" class="px-6 py-2 rounded-full bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-medium hover:shadow-lg hover:scale-105 transition-all duration-300">Sign In</button>
+              `
+              }
+            </div>
+          </div>
+        </div>
+      </nav>`;
+            };
+            const renderFooter = () => `
+      <footer class="mt-20 border-t border-gray-200 dark:border-gray-800 py-12 bg-white dark:bg-[#1e293b]">
+        <div class="max-w-7xl mx-auto px-4 text-center">
+          <div class="flex items-center justify-center space-x-2 text-xl font-bold mb-4 text-gray-900 dark:text-white">
+            <i data-lucide="book-open" class="text-blue-600 dark:text-blue-400"></i><span>LBmedia</span>
+          </div>
+          <p class="text-gray-500 dark:text-gray-400 mb-6">A modern, responsive, open-knowledge platform.</p>
+          <div class="flex justify-center space-x-6 text-sm text-gray-400">
+            <a href="#" class="hover:text-blue-500 transition-colors">Privacy Policy</a>
+            <a href="#" class="hover:text-blue-500 transition-colors">Terms of Service</a>
+            <a href="#" class="hover:text-blue-500 transition-colors">About Us</a>
+          </div>
+        </div>
+      </footer>`;
+            const renderCurrentView = () => {
+                switch (state.currentView) {
+                    case "home":
+                        return renderHomeView();
+                    case "article":
+                        return renderArticleView();
+                    case "editor":
+                        return renderEditorView();
+                    case "dashboard":
+                        return renderDashboardView();
+                    default:
+                        return renderHomeView();
+                }
+            };
+            const renderHomeView = () => {
+                const pubArticles = state.articles.filter((a) => a.status === "published");
+                const trending = [...pubArticles].sort((a, b) => (b.visits || 0) - (a.visits || 0)).slice(0, 5);
+                let daily = null;
+                if (pubArticles.length > 0) {
+                    const seed = parseInt(new Date().toISOString().split("T")[0].replace(/-/g, ""));
+                    daily = pubArticles[Math.floor(getSeededRandom(seed) * pubArticles.length)];
+                }
+                return `
+        <div class="space-y-12 animate-fade-in">
+          <section class="text-center py-16 px-4 rounded-3xl bg-gradient-to-b from-blue-50 to-white dark:from-[#1e293b] dark:to-[#0f172a] border border-gray-100 dark:border-gray-800 shadow-sm relative overflow-hidden">
+            <h1 class="text-5xl md:text-6xl font-extrabold mb-6 tracking-tight text-gray-900 dark:text-white relative z-10">
+              The Free <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400">Encyclopedia</span>
+            </h1>
+            <p class="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto mb-10 relative z-10">Discover knowledge in a beautiful, modern, and fast environment. Anyone can edit, everyone can learn.</p>
+            <div class="max-w-xl mx-auto relative md:hidden z-10 mb-8">
+              <i data-lucide="search" class="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+              <input type="text" placeholder="Search LBmedia..." oninput="window.app.handleSearch(event)" class="w-full bg-white dark:bg-[#0f172a] border-2 border-transparent focus:border-blue-500 rounded-full py-4 pl-12 pr-6 outline-none shadow-xl text-lg transition-all" />
+              <div id="mobile-search-dropdown" class="hidden absolute top-full left-0 right-0 mt-2 bg-white dark:bg-[#1e293b] rounded-2xl shadow-xl border border-gray-100 dark:border-gray-800 overflow-hidden z-50 text-left"></div>
+            </div>
+            <div class="mt-8 flex justify-center space-x-4 relative z-10">
+              <button onclick="window.app.createNewDraft()" class="px-8 py-3 rounded-full bg-blue-600 text-white font-semibold hover:bg-blue-700 hover:shadow-lg transition-all shadow-blue-500/30">Write an Article</button>
+              <button onclick="window.app.navigate('home')" class="px-8 py-3 rounded-full bg-white dark:bg-[#1e293b] text-gray-900 dark:text-white font-semibold border border-gray-200 dark:border-gray-700 hover:shadow-md transition-all">Random Article</button>
+            </div>
+          </section>
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <section class="lg:col-span-2 space-y-6">
+              <div class="flex items-center space-x-2 text-2xl font-bold text-gray-900 dark:text-white">
+                <i data-lucide="trending-up" class="text-blue-500"></i><h2>Trending Pages</h2>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                ${
+                    trending.length > 0
+                        ? trending
+                              .map(
+                                  (article, idx) => `
+                  <div onclick="window.app.navigateToArticle('${article.id}')" class="group p-5 rounded-2xl bg-white dark:bg-[#1e293b] border border-gray-100 dark:border-gray-800 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 cursor-pointer flex items-start">
+                    <div class="text-4xl font-black text-gray-100 dark:text-gray-800 mr-4 group-hover:text-blue-100 dark:group-hover:text-blue-900/30 transition-colors">${idx + 1}</div>
+                    <div>
+                      <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-2 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">${article.title}</h3>
+                      <p class="text-sm text-gray-500 dark:text-gray-400 line-clamp-2 leading-relaxed">${getArticlePreview(article.content)}</p>
+                      <div class="mt-4 flex items-center text-xs text-gray-400 font-medium">
+                        <i data-lucide="user" class="w-3 h-3 mr-1"></i> ${article.authorName} <span class="mx-2">•</span> ${article.visits || 0} views
+                      </div>
+                    </div>
+                  </div>`
+                              )
+                              .join("")
+                        : `<div class="col-span-2 p-8 text-center text-gray-500 bg-white dark:bg-[#1e293b] rounded-2xl border border-dashed border-gray-200 dark:border-gray-700">No trending articles yet.</div>`
+                }
+              </div>
+            </section>
+            <aside class="space-y-6">
+              <div class="flex items-center space-x-2 text-2xl font-bold text-gray-900 dark:text-white">
+                <i data-lucide="clock" class="text-indigo-500"></i><h2>Article of the Day</h2>
+              </div>
+              ${
+                  daily
+                      ? `
+                <div class="rounded-3xl bg-gradient-to-br from-indigo-600 to-purple-700 text-white p-1 overflow-hidden shadow-xl shadow-indigo-500/20">
+                  <div class="bg-white/10 backdrop-blur-md rounded-[23px] p-6 h-full flex flex-col justify-between">
+                    <div>
+                      <h3 class="text-2xl font-bold mb-3">${daily.title}</h3>
+                      <p class="text-indigo-100 line-clamp-6 leading-relaxed mb-6 text-sm">${getArticlePreview(daily.content, 250)}</p>
+                    </div>
+                    <button onclick="window.app.navigateToArticle('${daily.id}')" class="w-full py-3 rounded-xl bg-white text-indigo-700 font-bold hover:bg-indigo-50 transition-colors flex items-center justify-center">
+                      Read Full Article <i data-lucide="chevron-right" class="w-4 h-4 ml-1"></i>
+                    </button>
+                  </div>
+                </div>`
+                      : `<div class="p-8 text-center text-gray-500 bg-white dark:bg-[#1e293b] rounded-2xl border border-dashed border-gray-200 dark:border-gray-700">Check back later!</div>`
+              }
+            </aside>
+          </div>
+        </div>`;
+            };
+            const renderArticleView = () => {
+                const article = state.articles.find((a) => a.id === state.activeArticleId);
+                if (!article) return `<div class="py-20 text-center animate-pulse">Loading article...</div>`;
+                const parsed = parseWiki(article.content);
+                return `
+        <div class="flex flex-col lg:flex-row gap-10 animate-fade-in relative items-start">
+          <aside class="hidden lg:block w-64 shrink-0 sticky top-24">
+            <div class="bg-white dark:bg-[#1e293b] rounded-2xl p-5 border border-gray-100 dark:border-gray-800 shadow-sm">
+              <h4 class="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-4">Contents</h4>
+              <nav class="space-y-2 max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar">
+                ${parsed.toc.map((item) => `<a href="#${item.id}" class="block text-sm transition-colors ${item.level === 1 ? "font-semibold text-gray-800 dark:text-gray-200 mt-3" : "pl-4 text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400"}">${item.title}</a>`).join("")}
+                ${parsed.toc.length === 0 ? '<span class="text-sm text-gray-400">No sections</span>' : ""}
+              </nav>
+            </div>
+          </aside>
+          <article class="flex-1 bg-white dark:bg-[#1e293b] rounded-3xl p-8 md:p-12 border border-gray-100 dark:border-gray-800 shadow-sm min-h-[70vh]">
+            <div class="flex flex-wrap items-center justify-between gap-4 mb-8 border-b border-gray-100 dark:border-gray-700 pb-6">
+              <div class="flex items-center space-x-4 text-sm text-gray-500 dark:text-gray-400">
+                <span class="flex items-center"><i data-lucide="user" class="w-4 h-4 mr-1.5"></i> ${article.authorName}</span>
+                <span class="flex items-center"><i data-lucide="clock" class="w-4 h-4 mr-1.5"></i> ${new Date(article.createdAt).toLocaleDateString()}</span>
+                <span class="flex items-center"><i data-lucide="book-open" class="w-4 h-4 mr-1.5"></i> ${article.visits || 0} views</span>
+              </div>
+              <button onclick="window.app.proposeEdit('${article.id}')" class="flex items-center space-x-1.5 px-4 py-2 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-sm font-medium">
+                <i data-lucide="edit-3" class="w-4 h-4"></i> <span>Propose Edit</span>
+              </button>
+            </div>
+            <div class="prose prose-lg prose-blue dark:prose-invert max-w-none prose-headings:font-bold prose-a:text-blue-600 hover:prose-a:text-blue-500 prose-img:rounded-xl">
+              ${parsed.html}
+            </div>
+            <div class="mt-16 pt-8 border-t border-gray-100 dark:border-gray-800 text-sm text-gray-500">
+              Last updated: ${new Date(article.updatedAt || article.createdAt).toLocaleString()}
+            </div>
+          </article>
+        </div>`;
+            };
+            const renderEditorView = () => {
+                const parsedPreview =
+                    parseWiki(state.editor.content).html ||
+                    '<p class="text-gray-400 italic">Preview will appear here...</p>';
+                const saveText = state.editor.lastSaved
+                    ? `Saved ${state.editor.lastSaved.toLocaleTimeString()}`
+                    : "Draft";
+                return `
+        <div class="h-[calc(100vh-8rem)] flex flex-col bg-white dark:bg-[#1e293b] rounded-3xl overflow-hidden border border-gray-200 dark:border-gray-800 shadow-xl animate-fade-in relative z-20">
+          <header class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-[#0f172a]/50">
+            <div class="flex items-center space-x-4 flex-1">
+              <input type="text" placeholder="Article Title..." value="${state.editor.title}" oninput="window.app.handleEditorInput('title', this.value)" class="text-2xl font-bold bg-transparent border-none outline-none text-gray-900 dark:text-white placeholder-gray-400 w-full max-w-xl focus:ring-0" />
+            </div>
+            <div class="flex items-center space-x-4">
+              <div id="editor-save-status" class="text-sm text-gray-500 flex items-center">
+                <i data-lucide="save" class="w-4 h-4 mr-1.5"></i> ${saveText}
+              </div>
+              <button id="publish-btn" onclick="window.app.publishDraft()" class="flex items-center space-x-2 px-6 py-2 rounded-full font-bold text-white transition-all shadow-md bg-green-600 hover:bg-green-700 shadow-green-600/30 hover:shadow-lg hover:-translate-y-0.5">
+                <i data-lucide="check" class="w-5 h-5"></i> <span>Publish</span>
+              </button>
+              <button onclick="window.app.navigate('home')" class="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
+                <i data-lucide="x" class="w-6 h-6"></i>
+              </button>
+            </div>
+          </header>
+          <div class="flex-1 flex flex-col md:flex-row overflow-hidden">
+            <div class="flex-1 border-b md:border-b-0 md:border-r border-gray-200 dark:border-gray-800 flex flex-col relative bg-gray-50 dark:bg-[#0f172a]">
+              <div class="p-3 bg-gray-100 dark:bg-[#1e293b] border-b border-gray-200 dark:border-gray-800 text-xs text-gray-500 font-mono flex space-x-4 overflow-x-auto">
+                <span>= Header =</span><span>== Subheader ==</span><span>'''Bold'''</span><span>''Italic''</span><span>[[Link]]</span><span>* List</span>
+              </div>
+              <textarea oninput="window.app.handleEditorInput('content', this.value)" placeholder="Start writing using Wiki markup..." class="flex-1 w-full p-6 bg-transparent resize-none outline-none text-gray-800 dark:text-gray-200 font-mono text-sm leading-relaxed custom-scrollbar">${state.editor.content}</textarea>
+            </div>
+            <div class="flex-1 overflow-y-auto p-8 bg-white dark:bg-[#1e293b] custom-scrollbar">
+              <h1 id="editor-preview-title" class="text-4xl font-extrabold mb-6 text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-4">
+                ${state.editor.title || "Untitled Draft"}
+              </h1>
+              <div id="editor-preview" class="prose prose-blue dark:prose-invert max-w-none">
+                ${parsedPreview}
+              </div>
+            </div>
+          </div>
+        </div>`;
+            };
+            const renderDashboardView = () => `
+      <div class="flex flex-col md:flex-row gap-8 animate-fade-in">
+        <aside class="w-full md:w-72 space-y-6">
+          <div class="bg-white dark:bg-[#1e293b] rounded-3xl p-6 border border-gray-100 dark:border-gray-800 shadow-sm text-center">
+            <div class="w-24 h-24 mx-auto rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold text-3xl shadow-lg mb-4">
+              ${state.userData?.username?.charAt(0).toUpperCase() || "U"}
+            </div>
+            <h2 class="text-xl font-bold text-gray-900 dark:text-white">${state.userData?.username}</h2>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">${state.userData?.email}</p>
+            <div class="grid grid-cols-2 gap-4 border-t border-gray-100 dark:border-gray-700 pt-6">
+               <div class="text-center"><div class="text-2xl font-black text-gray-800 dark:text-gray-200">${state.drafts.length}</div><div class="text-xs text-gray-500 uppercase tracking-wide">Drafts</div></div>
+               <div class="text-center"><div class="text-2xl font-black text-blue-600 dark:text-blue-400">${state.userData?.publishedCount || 0}</div><div class="text-xs text-gray-500 uppercase tracking-wide">Published</div></div>
+            </div>
+          </div>
+          <button onclick="window.app.logout()" class="w-full flex items-center justify-center space-x-2 py-3 rounded-xl text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 transition-colors font-medium">
+            <i data-lucide="log-out" class="w-4 h-4"></i> <span>Sign Out</span>
+          </button>
+        </aside>
+        <div class="flex-1 space-y-8">
+          <section class="bg-white dark:bg-[#1e293b] rounded-3xl p-6 border border-gray-100 dark:border-gray-800 shadow-sm">
+            <h3 class="text-lg font-bold flex items-center text-gray-900 dark:text-white">
+              <i data-lucide="bell" class="w-5 h-5 mr-2 text-indigo-500"></i>
+              Notifications
+              <button onclick="window.app.clearNotifications()" class="text-xs px-3 py-1 rounded-lg bg-gray-100 dark:bg-[#0f172a] border border-gray-200 dark:border-gray-700 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 transition">
+                Clear
+              </button>
+            </h3>
+            <div class="space-y-3 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
+              ${
+                  state.notifications.length > 0
+                      ? state.notifications
+                            .map(
+                                (n) => `
+                <div onclick="window.app.markNotifRead('${n.id}')" class="p-4 rounded-xl border flex items-start space-x-3 cursor-pointer transition-colors ${!n.read ? "bg-blue-50/50 dark:bg-blue-900/10 border-blue-100 dark:border-blue-900" : "bg-gray-50 dark:bg-[#0f172a] border-gray-100 dark:border-gray-800 opacity-70"}">
+                  <i data-lucide="${n.type === "success" ? "check" : n.type === "error" ? "alert-circle" : "bell"}" class="mt-0.5 w-4 h-4 ${n.type === "success" ? "text-green-500" : n.type === "error" ? "text-red-500" : "text-blue-500"}"></i>
+                  <div class="flex-1">
+                    <p class="text-sm text-gray-800 dark:text-gray-200">${n.message}</p>
+                    <span class="text-xs text-gray-400 mt-1 block">${new Date(n.timestamp).toLocaleString()}</span>
+                  </div>
+                  ${!n.read ? '<div class="w-2 h-2 rounded-full bg-blue-500 mt-2"></div>' : ""}
+                </div>`
+                            )
+                            .join("")
+                      : '<div class="text-center py-6 text-gray-500 text-sm">No new notifications.</div>'
+              }
+            </div>
+          </section>
+          <section class="bg-white dark:bg-[#1e293b] rounded-3xl p-6 border border-gray-100 dark:border-gray-800 shadow-sm">
+            <h3 class="text-lg font-bold mb-4 flex items-center text-gray-900 dark:text-white"><i data-lucide="archive" class="w-5 h-5 mr-2 text-blue-500"></i> My Drafts</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              ${
+                  state.drafts.length > 0
+                      ? state.drafts
+                            .map(
+                                (d) => `
+                <div onclick="window.app.navigate('editor', '${d.id}')" class="group p-5 rounded-2xl border border-gray-200 dark:border-gray-700 hover:border-blue-500 cursor-pointer transition-all bg-gray-50 dark:bg-[#0f172a] relative">
+  <button onclick="event.stopPropagation(); window.app.deleteDraft('${d.id}')"class="absolute top-3 right-3 text-gray-400 hover:text-red-500 transition"title="Delete draft">
+    <i data-lucide="trash-2" class="w-4 h-4"></i>
+  </button>
+  <div class="flex justify-between items-start mb-2">
+    <h4 class="font-bold text-gray-900 dark:text-white group-hover:text-blue-600 transition-colors">
+      ${d.title || "Untitled Draft"}
+    </h4>
+    <span class="text-xs px-2 py-1 rounded-full font-medium ${
+        d.status === "rejected"
+            ? "bg-red-100 text-red-700"
+            : d.status === "reviewing"
+              ? "bg-yellow-100 text-yellow-700"
+              : "bg-gray-200 text-gray-700"
+    }">
+      ${d.status}
+    </span>
+  </div>
+  <p class="text-xs text-gray-500 line-clamp-2 mb-4 h-8">
+    ${(d.content || "").substring(0, 100) || "No content yet..."}
+  </p>
+  <div class="text-xs text-gray-400">
+    Last edited: ${new Date(d.lastEdited).toLocaleDateString()}
+  </div>
+</div>`
+                            )
+                            .join("")
+                      : '<div class="col-span-2 text-center py-10 text-gray-500 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-2xl">You have no active drafts.</div>'
+              }
+            </div>
+          </section>
+        </div>
+      </div>`;
+            const renderAuthModal = () => `
+      <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+        <div class="bg-white dark:bg-[#1e293b] rounded-3xl shadow-2xl w-full max-w-md overflow-hidden relative">
+          <button onclick="window.app.closeAuthModal()" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 bg-gray-100 dark:bg-gray-800 rounded-full p-1 transition-colors"><i data-lucide="x" class="w-5 h-5"></i></button>
+          <div class="p-8">
+            <div class="flex justify-center mb-6">
+              <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white shadow-lg"><i data-lucide="lock" class="w-8 h-8"></i></div>
+            </div>
+            <h2 class="text-3xl font-extrabold text-center text-gray-900 dark:text-white mb-2">${state.authMode === "login" ? "Welcome Back" : "Create Account"}</h2>
+            <p class="text-center text-gray-500 dark:text-gray-400 mb-8 text-sm">${state.authMode === "login" ? "Sign in to edit and create articles." : "Join the modern encyclopedia community."}</p>
+            <form onsubmit="window.app.submitAuth(event)" class="space-y-4">
+              ${
+                  state.authMode === "signup"
+                      ? `
+                <div><label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 ml-1">Username</label>
+                <input name="username" type="text" required class="w-full bg-gray-50 dark:bg-[#0f172a] border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g. WikiScholar" /></div>
+              `
+                      : ""
+              }
+              <div><label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 ml-1">Email</label>
+              <input name="email" type="email" required class="w-full bg-gray-50 dark:bg-[#0f172a] border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" placeholder="you@example.com" /></div>
+              <div><label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 ml-1">Password</label>
+              <input name="password" type="password" required class="w-full bg-gray-50 dark:bg-[#0f172a] border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500" placeholder="••••••••" /></div>
+              <button id="auth-submit-btn" type="submit" class="w-full py-3.5 rounded-xl bg-blue-600 text-white font-bold text-lg hover:bg-blue-700 transition-colors mt-6 shadow-lg shadow-blue-500/30">
+                ${state.authMode === "login" ? "Sign In" : "Sign Up"}
+              </button>
+            </form>
+            <div class="mt-8 text-center text-sm text-gray-600 dark:text-gray-400">
+              ${state.authMode === "login" ? "Don't have an account? " : "Already have an account? "}
+              <button class="font-bold text-blue-600 dark:text-blue-400 hover:underline" onclick="window.app.switchAuthMode('${state.authMode === "login" ? "signup" : "login"}')">${state.authMode === "login" ? "Sign Up" : "Sign In"}</button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+            // Start
+            render();
+        </script>
+    </head>
+    <body id="app-root" class="bg-gray-50 text-gray-900 min-h-screen transition-colors duration-300 font-sans">
+        <!-- Content gets injected here by Javascript -->
+    </body>
+</html>

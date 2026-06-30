@@ -155,7 +155,7 @@
                 if(!t)return{html:"",toc:[]};
                 let s=t.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,"");
                 s = highlightSyntax(s);
-                toc=[],refs=[],blocks=[];
+                let toc=[],refs=[],blocks=[];
                 s=s.replace(/```(\w+)?\n?([\s\S]*?)```/g,(m,l,c)=>{
                     let id=blocks.length;
                     blocks.push(`<pre class="bg-gray-900 text-gray-100 rounded-xl p-4 overflow-x-auto my-6 whitespace-pre-wrap"><div class="text-xs text-gray-400 mb-2">${l||"text"}</div><code>${escapeHtml(c)}</code></pre>`);

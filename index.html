@@ -270,6 +270,7 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                 navigate: async (view, id = null) => {
                     state.currentView = view;
                     if (view === "article") state.activeArticleId = id;
+                    if (view !== "editor") state.editor.isProtected = false;
                     if (view === "editor") {
                         state.activeDraftId = id;
                         render();
@@ -430,6 +431,7 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                     }
                     if (field === "title") {
                         document.getElementById("editor-preview-title").innerText = value || "Untitled Draft";
+                        state.editor.isProtected = isWikiProtectedPage(value);
                     }
                     clearTimeout(autoSaveTimer);
                     document.getElementById("editor-save-status").innerHTML =
@@ -594,6 +596,7 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                         title: d.title || "",
                         content: d.content || "",
                         lastSaved: d.lastEdited ? new Date(d.lastEdited) : null,
+                        isProtected: isWikiProtectedPage(d.title || "")
                     };
                     // If editor already exists, update it directly.
                     const titleInput = document.querySelector('input[placeholder="Article Title..."]');
@@ -971,7 +974,8 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
         </div>`;
             };
             const renderEditorView = () => {
-                const isProtected = isWikiProtectedPage(state.editor.title);
+                const currentTitle = state.currentView === "editor" ? state.editor.title : "";
+                const isProtected = state.editor.isProtected;
                 const admin = isAdminUser(state.userData);
                 const parsedPreview =
                     parseWiki(state.editor.content).html ||

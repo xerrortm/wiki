@@ -438,7 +438,7 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                         `<i data-lucide="refresh-cw" class="w-4 h-4 mr-1.5 animate-spin"></i> Saving...`;
                     lucide.createIcons();
                     autoSaveTimer = setTimeout(async () => {
-                        if (!state.activeDraftId || !state.user) return;
+                        if (!state.activeDraftId ||!state.user ||state.editor.isEditingArticle) return;
                         try {
                             await updateDoc(doc(getPrivateCol(state.user.uid, "drafts"), state.activeDraftId), {
                                 title: state.editor.title,
@@ -455,20 +455,25 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                     }, 1500);
                 },
                 proposeEdit: async (articleId) => {
-                    if (!state.user) return window.app.openAuthModal("login");
-                    const article = state.articles.find((a) => a.id === articleId);
+                    if (!state.user) {
+                        window.app.openAuthModal("login");
+                        return;
+                    }
+                    const article = state.articles.find(a => a.id === articleId);
                     if (!article) return;
-                    const draftRef = doc(getPrivateCol(state.user.uid, "drafts"));
-                    await setDoc(draftRef, {
+                    state.activeDraftId = null;
+                    state.editor = {
                         title: article.title,
                         content: article.content,
                         articleId: article.id,
-                        status: "draft",
-                        lastEdited: Date.now(),
-                        authorUid: state.user.uid,
-                        authorName: state.userData?.username || "Unknown",
-                    });
-                    window.app.navigate("editor", draftRef.id);
+                        isEditingArticle: true,
+                        isSaving: false,
+                        isPublishing: false,
+                        lastSaved: null,
+                        isProtected: isWikiProtectedPage(article.title)
+                    };
+                    state.currentView = "editor";
+                    render();
                 },
                 publishDraft: async () => {
                     const isProtected = isWikiProtectedPage(state.editor.title);
@@ -483,6 +488,7 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                     btn.disabled = true;
                     btn.innerHTML = `<i data-lucide="refresh-cw" class="w-5 h-5 animate-spin mr-2"></i> Reviewing...`;
                     lucide.createIcons();
+                    
                     const draftRef = doc(getPrivateCol(state.user.uid, "drafts"), state.activeDraftId);
                     await updateDoc(draftRef, { status: "reviewing" });
                     const review = await reviewArticleWithAI(state.editor.title, state.editor.content);
@@ -499,18 +505,32 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                         const draftData = draftSnap.data();
                         let articleRef;
                         let versionSummary;
-                        // If this draft came from "Propose Edit", update the existing article.
-                        if (draftData.articleId) {
-                            articleRef = doc(getPublicCol("articles"), draftData.articleId);
-                            if (draftData.articleId) {
-                                articleRef = doc(getPublicCol("articles"), draftData.articleId);
-                                await updateDoc(articleRef, {
+                        if (state.editor.isEditingArticle) {
+                            const review = await reviewArticleWithAI(
+                                state.editor.title,
+                                state.editor.content
+                            );
+                            if (!review.accepted) {
+                                alert(`Edit rejected:\n\n- ${review.reasons.join("\n- ")}`);
+                                return;
+                            }
+                            await updateDoc(
+                                doc(getPublicCol("articles"), state.editor.articleId),
+                                {
                                     title: state.editor.title,
                                     content: state.editor.content,
                                     updatedAt: Date.now(),
-                                });
-                            }
-                            versionSummary = "Edited article";
+                                }
+                            );
+                            await addDoc(getPrivateCol(state.user.uid, "notifications"), {
+                                message: `Your edit to "${state.editor.title}" was approved!`,
+                                type: "success",
+                                timestamp: Date.now(),
+                                read: false,
+                            });
+                            state.editor.isEditingArticle = false;
+                            window.app.navigateToArticle(state.editor.articleId);
+                            return;
                         } else {
                             // Otherwise create a brand new article.
                             articleRef = doc(getPublicCol("articles"));

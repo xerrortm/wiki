@@ -159,26 +159,37 @@
                 let title="",img="",cap="",d={};
                 b.split("\n").forEach(l=>{
                 let[k,...v]=l.replace(/^\s*\|\s*/,"").split("=");
-                if(!k)return;k=k.trim().toLowerCase();v=v.join("=").trim();
-                if(k==="name")title=v;else if(k==="image")img=v;else if(k==="caption")cap=v;else d[k]=v;
+                if(!k)return;
+                k=k.trim();
+                v=v.join("=").trim();
+                if(k==="name")title=v;
+                else if(k==="image")img=v;
+                else if(k==="caption")cap=v;
+                else d[k]=v;
                 });
-                return `<div class="float-right ml-6 mb-6 border rounded-xl p-2">
-                ${title?`<div class="font-bold">${title}</div>`:""}
-                ${img?`<img src="${img}" class="rounded">`:""}
-                ${cap?`<div class="text-xs">${cap}</div>`:""}
-                ${Object.entries(d).map(([k,v])=>`<div><b>${k}</b> ${v}</div>`).join("")}
+                return `
+                <div class="w-full max-w-sm float-right ml-6 mb-6 border rounded-xl overflow-hidden bg-gray-50 dark:bg-[#0f172a] shadow">
+                ${title?`<div class="bg-gray-200 dark:bg-gray-800 px-3 py-2 font-bold text-center">${title}</div>`:""}
+                ${img?`<img src="${img}" class="w-full object-cover">`:""}
+                ${cap?`<div class="text-xs text-gray-500 p-2 border-b text-center">${cap}</div>`:""}
+                <div class="p-3 text-sm space-y-1">
+                ${Object.entries(d).map(([k,v])=>
+                `<div class="flex justify-between gap-2"><span class="font-semibold text-gray-600 dark:text-gray-300">${k}</span><span class="text-right">${v}</span></div>`
+                ).join("")}
+                </div>
                 </div>`;
                 })
+                .replace(/\[\[(.*?)\]\]/g,'<a href="#" data-internal-link="$1" class="text-blue-600 dark:text-blue-400 hover:underline font-medium">$1</a>')
                 .replace(/\{\|[\s\S]*?\|\}/g,parseTable)
                 .replace(/'''(.*?)'''/g,"<b>$1</b>")
                 .replace(/''(.*?)''/g,"<i>$1</i>")
                 .replace(/__(.*?)__/g,"<u>$1</u>")
                 .replace(/`([^`\n]+)`/g,'<code class="bg-gray-200 px-1 rounded">$1</code>')
                 .replace(/^> (.*)$/gm,'<blockquote>$1</blockquote>')
-                .replace(/\{\{Note\|(.*?)\}\}/g,'<div>Note: $1</div>')
-                .replace(/\{\{Warning\|(.*?)\}\}/g,'<div>Warning: $1</div>')
-                .replace(/^\* (.*)/gm,'<li>$1</li>')
-                .replace(/^# (.*)/gm,'<li>$1</li>')
+                .replace(/\{\{Note\|(.*?)\}\}/g,'<div class="my-4 rounded-xl border-l-4 border-blue-500 bg-blue-50 dark:bg-blue-900/20 p-4"><strong>Note:</strong> $1</div>')
+                .replace(/\{\{Warning\|(.*?)\}\}/g,'<div class="my-4 rounded-xl border-l-4 border-red-500 bg-red-50 dark:bg-red-900/20 p-4"><strong>Warning:</strong> $1</div>')
+                .replace(/^\* (.*)/gm,'<li class="ml-6 list-disc mb-1">$1</li>')
+                .replace(/^# (.*)/gm,'<li class="ml-6 list-decimal mb-1">$1</li>')
                 .split("\n\n")
                 .map(p=>{
                 if(p.startsWith("<h")||p.startsWith("<li")||p.startsWith("<pre"))return p;

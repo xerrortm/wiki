@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>LBmedia - The Free Encyclopedia</title>
+        <title>LBmedia</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <script>
             tailwind.config = {
@@ -137,10 +137,10 @@
             const escapeHtml=t=>t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
             const highlightSyntax = (text) => {
                 return text
-                .replace(/\[\[(.*?)\]\]/g,'<span style="color:#8B5A2B;font-weight:600">[[$1]]</span>')
-                .replace(/'''(.*?)'''/g,'<span style="color:#22c55e;font-weight:600">'''$1'''</span>')
-                .replace(/''(.*?)''/g,'<span style="color:#22c55e;font-weight:600">\'\'$1\'\'</span>')
-                .replace(/__(.*?)__/g,'<span style="color:#22c55e;font-weight:600">__$1__</span>')
+                .replace(/\[\[(.*?)\]\]/g,"<span style='color:#8B5A2B;font-weight:600'>[[$1]]</span>")
+                .replace(/'''(.*?)'''/g,"<span style='color:#22c55e;font-weight:600'>'''$1'''</span>")
+                .replace(/''(.*?)''/g,"<span style='color:#22c55e;font-weight:600'>''$1''</span>")
+                .replace(/__(.*?)__/g,"<span style='color:#22c55e;font-weight:600'>__$1__</span>")
                 .replace(/\{\{Infobox/g,'<span style="color:#f59e0b;font-weight:700">{{Infobox</span>')
                 .replace(/\}\}/g,'<span style="color:#f59e0b;font-weight:700">}}</span>')
                 .replace(/\|\s*([a-zA-Z0-9_]+)\s*=/g,'<span style="color:#f59e0b;font-weight:700">| $1 =</span>')

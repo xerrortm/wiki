@@ -180,6 +180,7 @@
                 </div>`;
                 })
                 .replace(/\[\[(.*?)\]\]/g,'<a href="#" data-internal-link="$1" class="text-blue-600 dark:text-blue-400 hover:underline font-medium">$1</a>')
+                .replace(/\[(https?:\/\/[^\]\s]+)\s+([^\]]+)\]/g,'<a href="$1" class="text-blue-600 dark:text-blue-400 hover:underline">$2</a>')
                 .replace(/\{\|[\s\S]*?\|\}/g,parseTable)
                 .replace(/'''(.*?)'''/g,"<b>$1</b>")
                 .replace(/''(.*?)''/g,"<i>$1</i>")

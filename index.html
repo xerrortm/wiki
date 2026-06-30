@@ -153,7 +153,7 @@
             };
             const parseWiki=t=>{
                 if(!t)return{html:"",toc:[]};
-                let s=t.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,""),
+                let s=t.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,"");
                 s = highlightSyntax(s);
                 toc=[],refs=[],blocks=[];
                 s=s.replace(/```(\w+)?\n?([\s\S]*?)```/g,(m,l,c)=>{

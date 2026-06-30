@@ -146,10 +146,28 @@
                     return`@@C${id}@@`;
                 });
                 let h=s
-                .replace(/<ref>\s*\{\{cite\s+([^\|]+)\s*([\s\S]*?)\}\}\s*<\/ref>/gis,(m,_,b)=>{
-                let f={};b.split("|").forEach(p=>{let[k,...v]=p.split("=");if(k&&v.length)f[k.trim()]=v.join("=").trim();});
-                refs.push({title:f.title||"Source",url:f.url||"#",work:f.publisher||f.work||"",date:f.date||""});
-                return `<sup><a href="#ref-${refs.length}" class="text-blue-600 dark:text-blue-400 hover:underline font-medium">[${refs.length}]</a></sup>`;
+                .replace(/<ref>([\s\S]*?)<\/ref>/gis, (m, b) => {
+                    let text = b.trim();
+                    let f = {};
+                    const citeMatch = text.match(/\{\{cite([\s\S]*?)\}\}/i);
+                    if (citeMatch) {
+                        const body = citeMatch[1];
+                        body.split("|").forEach(p => {
+                            let [k, ...v] = p.split("=");
+                            if (!k || v.length === 0) return;
+                            f[k.trim().toLowerCase()] = v.join("=").trim();
+                        });
+                    } else {
+                        f.title = text || "";
+                        f.url = "";
+                    }
+                    refs.push({
+                        title: f.title || "",
+                        url: f.url || "",
+                        work: f.work || f.publisher || "",
+                        date: f.date || ""
+                    });
+                    return `<sup><a href="#ref-${refs.length}" class="text-blue-600 dark:text-blue-400 hover:underline font-medium">[${refs.length}]</a></sup>`;
                 })
                 .replace(/^==== (.*?) ====/gm,(m,t)=>`<h4 id="${t.toLowerCase().replace(/\s+/g,"-")}" class="text-lg font-bold mt-4 mb-2">${t}</h4>`)
                 .replace(/^=== (.*?) ===/gm,(m,t)=>`<h3 id="${t.toLowerCase().replace(/\s+/g,"-")}" class="text-xl font-bold mt-5 mb-2">${t}</h3>`)
@@ -203,7 +221,7 @@
                     </h2>
                     <ol class="list-decimal ml-6 space-y-3">
                     ${refs.map((r,i)=>`
-                    <li id="ref-${i+1}" class="p-2 rounded-lg bg-gray-50 dark:bg-[#0f172a] border border-gray-200 dark:border-gray-700">
+                    <li id="ref-${i+1}" class="p-2">
                     <a href="${r.url}" target="_blank" class="text-blue-600 dark:text-blue-400 hover:underline font-medium">
                     ${r.title}
                     </a>

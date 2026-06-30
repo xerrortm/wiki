@@ -134,90 +134,60 @@
                 html += "</table>";
                 return html;
             };
-            const parseWiki = (text) => {
-                if (!text) return { html: "", toc: [] };
-                let sanitized = text.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "");
-                const toc = [];
-                const refs = [];
-                let html = sanitized
-                    .replace(/<ref>\s*\{\{cite\s+([^\|]+)\s*([\s\S]*?)\}\}\s*<\/ref>/gis,(m, type, body) => {
-                        const fields = {};
-                        body.split("|").forEach(part => {
-                            const [k, ...v] = part.split("=");
-                            if (k && v.length) fields[k.trim()] = v.join("=").trim();
-                        });
-                        refs.push({
-                            title: fields.title || "Source",
-                            url: fields.url || "#",
-                            work: fields.publisher || fields.work || "",
-                            date: fields.date || "",
-                        });
-                        return `<sup><a href="#ref-${refs.length}">[${refs.length}]</a></sup>`;
-                    })
-                    .replace(/^==== (.*?) ====/gm, (m,t)=>`<h4 id="${t.toLowerCase().replace(/\s+/g,"-")}" class="text-lg font-bold mt-4 mb-2 text-gray-800 dark:text-gray-200">${t}</h4>`)
-                    .replace(/^=== (.*?) ===/gm, (m,t)=>`<h3 id="${t.toLowerCase().replace(/\s+/g,"-")}" class="text-xl font-bold mt-5 mb-2 text-gray-800 dark:text-gray-200">${t}</h3>`)
-                    .replace(/^== (.*?) ==/gm, (m,t)=>(toc.push({id:t.toLowerCase().replace(/\s+/g,"-"),title:t,level:2}),`<h2 id="${t.toLowerCase().replace(/\s+/g,"-")}" class="text-2xl font-bold mt-8 mb-4 border-b border-gray-200 dark:border-gray-700 pb-2 text-gray-900 dark:text-white">${t}</h2>`))
-                    .replace(/^= (.*?) =/gm, (m,t)=>(toc.push({id:t.toLowerCase().replace(/\s+/g,"-"),title:t,level:1}),`<h1 id="${t.toLowerCase().replace(/\s+/g,"-")}" class="text-4xl font-extrabold mt-10 mb-6 text-gray-900 dark:text-white">${t}</h1>`))
-                    .replace(/\{\{Infobox([\s\S]*?)\}\}/g, (m, body) => {
-                        let title = "", image = "", caption = "", data = {};
-                        body.split("\n").forEach(l => {
-                            let [k, ...v] = l.replace(/^\s*\|\s*/, "").split("=");
-                            if (!k) return;
-                            k = k.trim().toLowerCase();
-                            v = v.join("=").trim();
-                            if (k === "name") title = v;
-                            else if (k === "image") image = v;
-                            else if (k === "caption") caption = v;
-                            else data[k] = v;
-                        });
+            const escapeHtml=t=>t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 
-                        return `
-                            <div class="w-full max-w-sm float-right ml-6 mb-6 border rounded-xl overflow-hidden bg-gray-50 dark:bg-[#0f172a] shadow">
-                            ${title ? `<div class="bg-gray-200 dark:bg-gray-800 px-3 py-2 font-bold text-center">${title}</div>` : ""}
-                            ${image ? `<img src="${image}" class="w-full object-cover">` : ""}
-                            ${caption ? `<div class="text-xs text-gray-500 p-2 border-b text-center">${caption}</div>` : ""}
-                            <div class="p-3 text-sm space-y-1">
-                            ${Object.entries(data).map(([k,v]) =>
-                            `<div class="flex justify-between gap-2"><span class="font-semibold text-gray-600 dark:text-gray-300">${k}</span><span class="text-right">${v}</span></div>`
-                            ).join("")}
-                            </div></div>`;
-                    })
-                    .replace(/\{\|[\s\S]*?\|\}/g, parseTable)
-                    .replace(/'''(.*?)'''/g,"<strong>$1</strong>")
-                    .replace(/''(.*?)''/g,"<em>$1</em>")
-                    .replace(/__(.*?)__/g,"<u>$1</u>")
-                    .replace(/\[\[File:(https?:\/\/[^\|\]]+)(?:\|(\d+)px)?(?:\|(.*?))?\]\]/gi,(m,u,w,c)=>`<figure class="my-6 text-center"><img src="${u}" ${w?`style="width:${w}px"`:""} class="mx-auto rounded-xl shadow max-w-full">${c?`<figcaption class="mt-2 text-sm text-gray-500 dark:text-gray-400">${c}</figcaption>`:""}</figure>`)
-                    .replace(/\[\[(.*?)\]\]/g,'<a href="#" data-internal-link="$1" class="text-blue-600 dark:text-blue-400 hover:underline font-medium">$1</a>')
-                    .replace(/\[(https?:\/\/[^\s]+)\s+(.*?)\]/g,'<a href="$1" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">$2</a>')
-                    .replace(/`([^`\n]+)`/g,'<code class="bg-gray-200 dark:bg-gray-700 px-1.5 py-0.5 rounded font-mono text-sm">$1</code>')
-                    .replace(/^> (.*)$/gm,'<blockquote class="border-l-4 border-blue-500 pl-4 italic my-4 text-gray-600 dark:text-gray-300">$1</blockquote>')
-                    .replace(/\{\{Note\|(.*?)\}\}/g,'<div class="my-4 rounded-xl border-l-4 border-blue-500 bg-blue-50 dark:bg-blue-900/20 p-4"><strong>Note:</strong> $1</div>')
-                    .replace(/\{\{Warning\|(.*?)\}\}/g,'<div class="my-4 rounded-xl border-l-4 border-red-500 bg-red-50 dark:bg-red-900/20 p-4"><strong>Warning:</strong> $1</div>')
-                    .replace(/^\* (.*)/gm,'<li class="ml-6 list-disc mb-1">$1</li>')
-                    .replace(/^# (.*)/gm,'<li class="ml-6 list-decimal mb-1">$1</li>')
-                    .split("\n\n")
-                    .map((p) => {
-                        if (p.trim().startsWith("<h") || p.trim().startsWith("<li")) return p;
-                        return `<p class="mb-4 leading-relaxed">${p}</p>`;
-                    })
-                    .join("");
-                    if (refs.length) {
-                        html += `
-                            <h2 id="references" class="text-2xl font-bold mt-8 mb-4 border-b border-gray-200 dark:border-gray-700 pb-2">
-                                References
-                            </h2>
-                            <ol class="list-decimal ml-6 space-y-3">
-                                ${refs.map((r,i)=>`
-                                    <li id="ref-${i+1}">
-                                        <a href="${r.url}" target="_blank" class="text-blue-600 hover:underline">${r.title}</a>.
-                                        <i>${r.work}</i>. ${r.date}${r.lang ? ` (${r.lang})` : ""}.
-                                    </li>
-                                `).join("")}
-                            </ol>`;
-                    }
-                    html = html.replace(/(<li class="[^"]*list-disc[^"]*">.*<\/li>)/s,'<ul class="mb-4">$1</ul>');
-                    html = html.replace(/(<li class="[^"]*list-decimal[^"]*">.*<\/li>)/s,'<ol class="mb-4">$1</ol>');
-                    return { html, toc };
+            const parseWiki=t=>{
+                if(!t)return{html:"",toc:[]};
+                let s=t.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,""),
+                toc=[],refs=[],blocks=[];
+                s=s.replace(/```(\w+)?\n?([\s\S]*?)```/g,(m,l,c)=>{
+                    let id=blocks.length;
+                    blocks.push(`<pre class="bg-gray-900 text-gray-100 rounded-xl p-4 overflow-x-auto my-6 whitespace-pre-wrap"><div class="text-xs text-gray-400 mb-2">${l||"text"}</div><code>${escapeHtml(c)}</code></pre>`);
+                    return`@@C${id}@@`;
+                });
+                let h=s
+                .replace(/<ref>\s*\{\{cite\s+([^\|]+)\s*([\s\S]*?)\}\}\s*<\/ref>/gis,(m,_,b)=>{
+                let f={};b.split("|").forEach(p=>{let[k,...v]=p.split("=");if(k&&v.length)f[k.trim()]=v.join("=").trim();});
+                refs.push({title:f.title||"Source",url:f.url||"#",work:f.publisher||f.work||"",date:f.date||""});
+                return`<sup><a href="#ref-${refs.length}">[${refs.length}]</a></sup>`;
+                })
+                .replace(/^==== (.*?) ====/gm,(m,t)=>`<h4 id="${t.toLowerCase().replace(/\s+/g,"-")}" class="text-lg font-bold mt-4 mb-2">${t}</h4>`)
+                .replace(/^=== (.*?) ===/gm,(m,t)=>`<h3 id="${t.toLowerCase().replace(/\s+/g,"-")}" class="text-xl font-bold mt-5 mb-2">${t}</h3>`)
+                .replace(/^== (.*?) ==/gm,(m,t)=>(toc.push({id:t.toLowerCase().replace(/\s+/g,"-"),title:t,level:2}),`<h2 id="${t.toLowerCase().replace(/\s+/g,"-")}" class="text-2xl font-bold mt-8 mb-4">${t}</h2>`))
+                .replace(/^= (.*?) =/gm,(m,t)=>(toc.push({id:t.toLowerCase().replace(/\s+/g,"-"),title:t,level:1}),`<h1 id="${t.toLowerCase().replace(/\s+/g,"-")}" class="text-4xl font-extrabold mt-10 mb-6">${t}</h1>`))
+                .replace(/\{\{Infobox([\s\S]*?)\}\}/g,(m,b)=>{
+                let title="",img="",cap="",d={};
+                b.split("\n").forEach(l=>{
+                let[k,...v]=l.replace(/^\s*\|\s*/,"").split("=");
+                if(!k)return;k=k.trim().toLowerCase();v=v.join("=").trim();
+                if(k==="name")title=v;else if(k==="image")img=v;else if(k==="caption")cap=v;else d[k]=v;
+                });
+                return `<div class="float-right ml-6 mb-6 border rounded-xl p-2">
+                ${title?`<div class="font-bold">${title}</div>`:""}
+                ${img?`<img src="${img}" class="rounded">`:""}
+                ${cap?`<div class="text-xs">${cap}</div>`:""}
+                ${Object.entries(d).map(([k,v])=>`<div><b>${k}</b> ${v}</div>`).join("")}
+                </div>`;
+                })
+                .replace(/\{\|[\s\S]*?\|\}/g,parseTable)
+                .replace(/'''(.*?)'''/g,"<b>$1</b>")
+                .replace(/''(.*?)''/g,"<i>$1</i>")
+                .replace(/__(.*?)__/g,"<u>$1</u>")
+                .replace(/`([^`\n]+)`/g,'<code class="bg-gray-200 px-1 rounded">$1</code>')
+                .replace(/^> (.*)$/gm,'<blockquote>$1</blockquote>')
+                .replace(/\{\{Note\|(.*?)\}\}/g,'<div>Note: $1</div>')
+                .replace(/\{\{Warning\|(.*?)\}\}/g,'<div>Warning: $1</div>')
+                .replace(/^\* (.*)/gm,'<li>$1</li>')
+                .replace(/^# (.*)/gm,'<li>$1</li>')
+                .split("\n\n")
+                .map(p=>{
+                if(p.startsWith("<h")||p.startsWith("<li")||p.startsWith("<pre"))return p;
+                return`<p>${p}</p>`;
+                }).join("");
+                if(refs.length)
+                h+=`<h2>References</h2><ol>${refs.map((r,i)=>`<li id="ref-${i+1}"><a href="${r.url}">${r.title}</a> ${r.work} ${r.date}</li>`).join("")}</ol>`;
+                h=h.replace(/@@C(\d+)@@/g,(_,i)=>blocks[i]);
+                return{html:h,toc};
             };
             const getSeededRandom = (seed) => {
                 let x = Math.sin(seed++) * 10000;

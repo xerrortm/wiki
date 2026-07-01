@@ -154,7 +154,6 @@
             const parseWiki=t=>{
                 if(!t)return{html:"",toc:[]};
                 let s=t.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,"");
-                s = highlightSyntax(s);
                 let toc=[],refs=[],blocks=[];
                 s=s.replace(/```(\w+)?\n?([\s\S]*?)```/g,(m,l,c)=>{
                     let id=blocks.length;
@@ -458,6 +457,10 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                 },
                 handleEditorInput: (field, value) => {
                     state.editor[field] = value;
+                    const highlighter = document.getElementById("editor-highlight");
+                    if (highlighter) {
+                        highlighter.innerHTML = highlightSyntax(escapeHtml(value));
+                    }        
                     if (field === "content") {
                         const parsed = parseWiki(value);
                         document.getElementById("editor-preview").innerHTML =
@@ -1037,6 +1040,7 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                 const saveText = state.editor.lastSaved
                     ? `Saved ${state.editor.lastSaved.toLocaleTimeString()}`
                     : "Draft";
+                
                 return `
         <div class="h-[calc(100vh-8rem)] flex flex-col bg-white dark:bg-[#1e293b] rounded-3xl overflow-hidden border border-gray-200 dark:border-gray-800 shadow-xl animate-fade-in relative z-20">
           <header class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-[#0f172a]/50">
@@ -1069,7 +1073,20 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
             ` : ""}
           <div class="flex-1 flex flex-col md:flex-row overflow-hidden">
             <div class="flex-1 border-b md:border-b-0 md:border-r border-gray-200 dark:border-gray-800 flex flex-col relative bg-gray-50 dark:bg-[#0f172a]">
-              <textarea oninput="window.app.handleEditorInput('content', this.value)" placeholder="Start writing using Wiki markup..." class="flex-1 w-full p-6 bg-transparent resize-none outline-none text-gray-800 dark:text-gray-200 font-mono text-sm leading-relaxed custom-scrollbar">${state.editor.content}</textarea>
+              <div class="relative flex-1 overflow-hidden">
+    <pre
+        id="editor-highlight"
+        class="absolute inset-0 p-6 overflow-auto whitespace-pre-wrap break-words font-mono text-sm leading-relaxed pointer-events-none custom-scrollbar">
+    </pre>
+
+    <textarea
+        id="editor-textarea"
+        oninput="window.app.handleEditorInput('content', this.value)"
+        placeholder="Start writing using Wiki markup..."
+        class="absolute inset-0 w-full h-full p-6 resize-none outline-none bg-transparent text-transparent caret-black dark:caret-white font-mono text-sm leading-relaxed custom-scrollbar">
+${state.editor.content}
+    </textarea>
+</div>
             </div>
             <div class="flex-1 overflow-y-auto p-8 bg-white dark:bg-[#1e293b] custom-scrollbar">
               <h1 id="editor-preview-title" class="text-4xl font-extrabold mb-6 text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-4">
@@ -1081,6 +1098,27 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
             </div>
           </div>
         </div>`;
+                setTimeout(() => {
+    const highlight = document.getElementById("editor-highlight");
+    const textarea = document.getElementById("editor-textarea");
+
+    if (highlight && textarea) {
+        highlight.innerHTML = highlightSyntax(escapeHtml(textarea.value));
+    }
+}, 0);
+                setTimeout(() => {
+    const textarea = document.getElementById("editor-textarea");
+    const highlight = document.getElementById("editor-highlight");
+
+    if (textarea && highlight) {
+        highlight.innerHTML = highlightSyntax(textarea.value);
+
+        textarea.addEventListener("scroll", () => {
+            highlight.scrollTop = textarea.scrollTop;
+            highlight.scrollLeft = textarea.scrollLeft;
+        });
+    }
+}, 0);
             };
             const renderDashboardView = () => `
       <div class="flex flex-col md:flex-row gap-8 animate-fade-in">

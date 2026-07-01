@@ -1102,7 +1102,7 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                     const highlight = document.getElementById("editor-highlight");
                     if (textarea && highlight) {
                         highlight.innerHTML = highlightSyntax(textarea.value);
-                        textarea.addEventListener("scroll", () => 
+                        textarea.addEventListener("scroll", () => {
                             highlight.style.transform =`translate(${-textarea.scrollLeft}px, ${-textarea.scrollTop}px)`;
                         });
                     }

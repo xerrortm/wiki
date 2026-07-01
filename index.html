@@ -49,23 +49,6 @@
         </style>
         <script src="https://unpkg.com/lucide@latest"></script>
         <script type="module">
-            import { EditorState } from "https://esm.sh/@codemirror/state";
-            import { EditorView, keymap } from "https://esm.sh/@codemirror/view";
-            import { basicSetup } from "https://esm.sh/codemirror";
-            import { defaultKeymap } from "https://esm.sh/@codemirror/commands";
-            import { StreamLanguage } from "https://esm.sh/@codemirror/language";
-            import { mediawiki } from "https://esm.sh/@codemirror/legacy-modes/mode/mediawiki";
-            window.CM = {
-                EditorState,
-                EditorView,
-                keymap,
-                basicSetup,
-                defaultKeymap,
-                StreamLanguage,
-                mediawiki
-            };
-        </script>
-        <script type="module">
             import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
             import {
                 getAuth,
@@ -254,40 +237,6 @@
             const getSeededRandom = (seed) => {
                 let x = Math.sin(seed++) * 10000;
                 return x - Math.floor(x);
-            };
-            let cmView = null;
-            
-            const initWikiEditor = () => {
-                if (cmView) return;
-                const {
-                    EditorState,
-                    EditorView,
-                    keymap,
-                    basicSetup,
-                    defaultKeymap,
-                    StreamLanguage,
-                    mediawiki
-                } = window.CM;
-                const parent = document.getElementById("cm-editor");
-                if (!parent) return;
-
-                cmView = new EditorView({
-                    state: EditorState.create({
-                    doc: state.editor.content || "",
-                    extensions: [
-                        basicSetup,
-                        StreamLanguage.define(mediawiki),
-                        keymap.of(defaultKeymap),
-                        EditorView.updateListener.of((update) => {
-                            if (update.docChanged) {
-                                const value = update.state.doc.toString();
-                                window.app.handleEditorInput("content", value);
-                            }
-                        }),
-                    ],
-                    }),
-                    parent,
-                });
             };
             const reviewArticleWithAI = async (title, content) => {
                 const API_KEY = "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";
@@ -676,9 +625,7 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
             const loadDraftData = async (id) => {
                 if (!state.user) return;
                 try {
-                    const snap = await getDoc(
-                        doc(getPrivateCol(state.user.uid, "drafts"), id)
-                    );
+                    const snap = await getDoc(doc(getPrivateCol(state.user.uid, "drafts"), id));
                     if (!snap.exists()) return;
                     const d = snap.data();
                     state.editor = {
@@ -686,39 +633,23 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
                         title: d.title || "",
                         content: d.content || "",
                         lastSaved: d.lastEdited ? new Date(d.lastEdited) : null,
-                        isProtected: isWikiProtectedPage(d.title || ""),
+                        isProtected: isWikiProtectedPage(d.title || "")
                     };
-                    if (cmView) {
-                        cmView.dispatch({
-                            changes: {
-                                from: 0,
-                                to: cmView.state.doc.length,
-                                insert: state.editor.content || "",
-                            },
-                        });
-                    }
-                    const titleInput = document.querySelector(
-                        'input[placeholder="Article Title..."]'
-                    );
-                    if (titleInput) {
-                        titleInput.value = state.editor.title;
-                    }
-                    const parsed = parseWiki(state.editor.content || "");
+                    // If editor already exists, update it directly.
+                    const titleInput = document.querySelector('input[placeholder="Article Title..."]');
+                    const textarea = document.querySelector("textarea");
+                    if (titleInput) titleInput.value = state.editor.title;
+                    if (textarea) textarea.value = state.editor.content;
+                    const preview = parseWiki(state.editor.content);
                     const previewTitle = document.getElementById("editor-preview-title");
-                    if (previewTitle) {
-                        previewTitle.innerText =state.editor.title || "Untitled Draft";
-                    }
+                    if (previewTitle) previewTitle.innerText = state.editor.title || "Untitled Draft";
                     const previewDiv = document.getElementById("editor-preview");
-                    if (previewDiv) {
-                        previewDiv.innerHTML =parsed.html ||"<p class='text-gray-400 italic'>No preview available...</p>";
-                    }
+                    if (previewDiv) previewDiv.innerHTML = preview.html || "<p>No preview.</p>";
                     const saveStatus = document.getElementById("editor-save-status");
-                    if (saveStatus) {
-                        saveStatus.innerHTML =`<i data-lucide="save" class="w-4 h-4 mr-1.5"></i> Draft`;
-                        lucide.createIcons();
-                    }
+                    if (saveStatus) saveStatus.innerHTML = `<i data-lucide="save" class="w-4 h-4 mr-1.5"></i> Draft`;
+                    lucide.createIcons();
                 } catch (err) {
-                    console.error("Failed to load draft:", err);
+                    console.error(err);
                 }
             };
             const updateFeaturedArticleIfNeeded = async () => {
@@ -1122,7 +1053,9 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
             ` : ""}
           <div class="flex-1 flex flex-col md:flex-row overflow-hidden">
             <div class="flex-1 border-b md:border-b-0 md:border-r border-gray-200 dark:border-gray-800 flex flex-col relative bg-gray-50 dark:bg-[#0f172a]">
-                <div id="cm-editor" class="w-full h-full"></div>
+                <textarea id="editor-textarea"oninput="window.app.handleEditorInput('content', this.value)"class="w-full h-full p-6 resize-none outline-none bg-transparent text-gray-900 dark:text-gray-100 font-mono text-sm leading-relaxed">
+                    ${state.editor.content}
+                </textarea>
             </div>
             <div class="flex-1 overflow-y-auto p-8 bg-white dark:bg-[#1e293b] custom-scrollbar">
               <h1 id="editor-preview-title" class="text-4xl font-extrabold mb-6 text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-4">
@@ -1134,9 +1067,6 @@ Respond strictly in JSON format without markdown wrapping: {"accepted": boolean,
             </div>
           </div>
         </div>`;
-                setTimeout(() => {
-                    initWikiEditor();
-                }, 0);
             };
             const renderDashboardView = () => `
       <div class="flex flex-col md:flex-row gap-8 animate-fade-in">
